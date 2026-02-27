@@ -1,0 +1,1415 @@
+﻿/* ═══════════════════════════════════════════════════════════════
+   DASHBOARD - MAIN LOGIC (Google Maps Edition)
+   IoT Location Polling | Live Map | Nearby Services | SOS
+   ═══════════════════════════════════════════════════════════════ */
+
+"use strict";
+
+// ─── Auth Guard ───────────────────────────────────────────────
+const CURRENT_USER = requireAuth();
+
+// ─── DOM References ───────────────────────────────────────────
+const DOM = {
+  coordLat: document.getElementById("coordLat"),
+  coordLng: document.getElementById("coordLng"),
+  deviceId: document.getElementById("deviceId"),
+  deviceSpeed: document.getElementById("deviceSpeed"),
+  deviceSignal: document.getElementById("deviceSignal"),
+  batteryPct: document.getElementById("batteryPct"),
+  batteryBar: document.getElementById("batteryBar"),
+  lastUpdateTime: document.getElementById("lastUpdateTime"),
+  updateTimeAgo: document.getElementById("updateTimeAgo"),
+  hospitalsList: document.getElementById("hospitalsList"),
+  policeList: document.getElementById("policeList"),
+  hospitalCount: document.getElementById("hospitalCount"),
+  policeCount: document.getElementById("policeCount"),
+  hospitalCountBadge: document.getElementById("hospitalCountBadge"),
+  policeCountBadge: document.getElementById("policeCountBadge"),
+  sosBtn: document.getElementById("sosBtn"),
+  sosBanner: document.getElementById("sosBanner"),
+  mapZoomLevel: document.getElementById("mapZoomLevel"),
+  userMenuName: document.getElementById("userMenuName"),
+  userAvatarInitials: document.getElementById("userAvatarInitials"),
+  dropdownUserName: document.getElementById("dropdownUserName"),
+  logoutBtn: document.getElementById("logoutBtn"),
+  userMenuBtn: document.getElementById("userMenuBtn"),
+  mapLoadingOverlay: document.getElementById("mapLoadingOverlay"),
+  sosLogList: document.getElementById("sosLogList"),
+};
+
+// ─── State ────────────────────────────────────────────────────
+let state = {
+  lat: 28.6139,
+  lng: 77.209,
+  prevLat: null,
+  prevLng: null,
+  hospitals: [],
+  policeStations: [],
+  activeFilter: "all",
+  sosActive: false,
+  mapReady: false,
+  lastFetchTime: null,
+  locationHistory: [],
+  sosLog: [],
+};
+
+// ─── Active Navigation State ───────────────────────────────────
+let navState = {
+  active: false,
+  destLat: null,
+  destLng: null,
+  destName: "",
+  lastUpdateLat: null,
+  lastUpdateLng: null,
+};
+
+// ─── Initialize User UI ───────────────────────────────────────
+if (CURRENT_USER) {
+  const initials = CURRENT_USER.name
+    .split(" ")
+    .map(n => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+  DOM.userMenuName.textContent = CURRENT_USER.name;
+  DOM.userAvatarInitials.textContent = initials;
+  DOM.dropdownUserName.textContent = CURRENT_USER.name;
+}
+
+DOM.userMenuBtn.addEventListener("click", e => {
+  e.stopPropagation();
+  DOM.userMenuBtn.classList.toggle("open");
+});
+document.addEventListener("click", () =>
+  DOM.userMenuBtn.classList.remove("open"),
+);
+DOM.logoutBtn.addEventListener("click", logout);
+
+// ─── Google Maps Dark Style ───────────────────────────────────
+const DARK_MAP_STYLE = [
+  { elementType: "geometry", stylers: [{ color: "#0a0f1e" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#6b8fa8" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#020510" }] },
+  {
+    featureType: "administrative",
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#1a2744" }],
+  },
+  {
+    featureType: "administrative.land_parcel",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#344e6b" }],
+  },
+  {
+    featureType: "poi",
+    elementType: "geometry",
+    stylers: [{ color: "#0d1626" }],
+  },
+  {
+    featureType: "poi",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#4a7090" }],
+  },
+  {
+    featureType: "poi.park",
+    elementType: "geometry",
+    stylers: [{ color: "#071220" }],
+  },
+  {
+    featureType: "poi.park",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#2a5a40" }],
+  },
+  {
+    featureType: "road",
+    elementType: "geometry",
+    stylers: [{ color: "#1a2744" }],
+  },
+  {
+    featureType: "road",
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#0d1626" }],
+  },
+  {
+    featureType: "road",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#8090a8" }],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "geometry",
+    stylers: [{ color: "#1e3060" }],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#0a1830" }],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#a0b8d0" }],
+  },
+  {
+    featureType: "transit",
+    elementType: "geometry",
+    stylers: [{ color: "#0d1626" }],
+  },
+  {
+    featureType: "transit.station",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#4a6a8a" }],
+  },
+  {
+    featureType: "water",
+    elementType: "geometry",
+    stylers: [{ color: "#020d1a" }],
+  },
+  {
+    featureType: "water",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#1a3a5c" }],
+  },
+];
+
+// ─── Map & Markers ────────────────────────────────────────────
+let map = null;
+let placesService = null;
+let directionsService = null;
+let directionsRenderer = null;
+let deviceMarker = null;
+let trailPolyline = null;
+let sosCircle = null;
+let infoWindow = null;
+let facilityMarkers = { hospitals: [], police: [] };
+
+// ─── Google Maps Callback ─────────────────────────────────────
+window.initMap = function () {
+  map = new google.maps.Map(document.getElementById("map"), {
+    center: { lat: state.lat, lng: state.lng },
+    zoom: 15,
+    styles: DARK_MAP_STYLE,
+    disableDefaultUI: false,
+    zoomControl: true,
+    zoomControlOptions: { position: google.maps.ControlPosition.RIGHT_BOTTOM },
+    mapTypeControl: false,
+    streetViewControl: false,
+    fullscreenControl: false,
+    gestureHandling: "greedy",
+    backgroundColor: "#020510",
+  });
+
+  infoWindow = new google.maps.InfoWindow();
+  placesService = new google.maps.places.PlacesService(map);
+  directionsService = new google.maps.DirectionsService();
+  directionsRenderer = new google.maps.DirectionsRenderer({
+    map,
+    suppressMarkers: false,
+    polylineOptions: {
+      strokeColor: "#00ff88",
+      strokeWeight: 5,
+      strokeOpacity: 0.85,
+    },
+  });
+
+  map.addListener("zoom_changed", () => {
+    DOM.mapZoomLevel.textContent = map.getZoom();
+  });
+
+  // Get real GPS location from browser first
+  startRealGeoTracking();
+
+  // Start IoT polling
+  fetchIoTLocation();
+  setInterval(fetchIoTLocation, 3000);
+};
+
+// ─── Real Browser Geolocation ─────────────────────────────────
+let geoWatchId = null;
+
+function startRealGeoTracking() {
+  if (!navigator.geolocation) {
+    showToast("Geolocation not supported by browser", "warning", 4000);
+    return;
+  }
+
+  // One-time high-accuracy fix first
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+      pushRealLocation(lat, lng);
+      // Center map immediately on real location
+      if (map) {
+        map.panTo({ lat, lng });
+        map.setZoom(16);
+      }
+      // Update state and re-fetch nearby services for real location
+      state.lat = lat;
+      state.lng = lng;
+      state.mapReady = true;
+      hideMapLoading();
+      fetchNearbyServices(lat, lng);
+      showToast(
+        `📍 Real GPS locked (±${Math.round(accuracy)}m)`,
+        "success",
+        3000,
+      );
+    },
+    err => {
+      console.warn("Geolocation error:", err.message);
+      if (err.code === 1) {
+        showToast(
+          "Location permission denied — showing simulated location",
+          "warning",
+          5000,
+        );
+      } else {
+        showToast(
+          "GPS unavailable — showing simulated location",
+          "warning",
+          4000,
+        );
+      }
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+  );
+
+  // Continuous tracking — update every time the device moves
+  geoWatchId = navigator.geolocation.watchPosition(
+    pos => {
+      const { latitude: lat, longitude: lng } = pos.coords;
+      pushRealLocation(lat, lng);
+    },
+    err => console.warn("Watch position error:", err.message),
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 3000 },
+  );
+}
+
+// ─── Real System Battery ──────────────────────────────────────
+let realBatteryLevel = null; // 0–100 or null if unavailable
+
+async function startBatteryTracking() {
+  if (!navigator.getBattery) return;
+  try {
+    const bat = await navigator.getBattery();
+
+    function applyBattery() {
+      realBatteryLevel = Math.round(bat.level * 100);
+      const val = realBatteryLevel;
+
+      DOM.batteryPct.textContent = val + "%";
+      DOM.batteryBar.style.width = val + "%";
+
+      // Color based on level
+      if (val < 20) {
+        DOM.batteryBar.style.background = "var(--danger)";
+        DOM.batteryBar.style.boxShadow = "0 0 8px var(--danger)";
+      } else if (val < 40) {
+        DOM.batteryBar.style.background = "var(--warning)";
+        DOM.batteryBar.style.boxShadow = "0 0 8px var(--warning)";
+      } else {
+        DOM.batteryBar.style.background = "";
+        DOM.batteryBar.style.boxShadow = "";
+      }
+    }
+
+    applyBattery();
+    bat.addEventListener("levelchange", applyBattery);
+    bat.addEventListener("chargingchange", applyBattery);
+  } catch (e) {
+    console.warn("Battery API unavailable:", e.message);
+  }
+}
+startBatteryTracking();
+
+async function pushRealLocation(lat, lng) {
+  try {
+    const body = { lat, lng };
+    if (realBatteryLevel !== null) body.battery = realBatteryLevel;
+    await fetch("/api/iot/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    console.warn("Failed to push real location:", err.message);
+  }
+}
+
+// ─── SVG Marker Icons ─────────────────────────────────────────
+function deviceIconUrl() {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="46" height="46" viewBox="0 0 46 46">
+    <circle cx="23" cy="23" r="22" fill="none" stroke="rgba(0,245,255,0.6)" stroke-width="1.5">
+      <animate attributeName="r" from="14" to="22" dur="2s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" from="1" to="0" dur="2s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="23" cy="23" r="13" fill="url(#dg)" stroke="white" stroke-width="2.5"/>
+    <text x="23" y="27" text-anchor="middle" font-size="12">📍</text>
+    <defs>
+      <radialGradient id="dg"><stop offset="0%" stop-color="#00f5ff"/><stop offset="100%" stop-color="#0099cc"/></radialGradient>
+    </defs>
+  </svg>`;
+  return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg);
+}
+
+function hospitalIconUrl() {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36">
+    <circle cx="18" cy="18" r="17" fill="#cc5500" stroke="rgba(255,107,53,0.8)" stroke-width="1.5"/>
+    <text x="18" y="22" text-anchor="middle" font-size="15">🏥</text>
+  </svg>`;
+  return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg);
+}
+
+function policeIconUrl() {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36">
+    <circle cx="18" cy="18" r="17" fill="#0055cc" stroke="rgba(0,150,255,0.8)" stroke-width="1.5"/>
+    <text x="18" y="22" text-anchor="middle" font-size="15">🚔</text>
+  </svg>`;
+  return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg);
+}
+
+// ─── Update Device Marker ─────────────────────────────────────
+function updateDeviceMarker(lat, lng) {
+  const pos = { lat, lng };
+
+  if (!deviceMarker) {
+    deviceMarker = new google.maps.Marker({
+      position: pos,
+      map,
+      icon: {
+        url: deviceIconUrl(),
+        scaledSize: new google.maps.Size(46, 46),
+        anchor: new google.maps.Point(23, 23),
+      },
+      zIndex: 1000,
+      title: "IoT Device",
+    });
+
+    deviceMarker.addListener("click", () => {
+      infoWindow.setContent(buildDevicePopup(lat, lng));
+      infoWindow.open(map, deviceMarker);
+    });
+  } else {
+    deviceMarker.setPosition(pos);
+  }
+
+  // Trail (last 20 positions)
+  state.locationHistory.push({ lat, lng });
+  if (state.locationHistory.length > 20) state.locationHistory.shift();
+
+  if (trailPolyline) {
+    trailPolyline.setPath(state.locationHistory);
+  } else {
+    trailPolyline = new google.maps.Polyline({
+      path: state.locationHistory,
+      map,
+      strokeColor: "rgba(0,245,255,0.5)",
+      strokeWeight: 2,
+      strokeOpacity: 1,
+      icons: [
+        {
+          icon: {
+            path: google.maps.SymbolPath.FORWARD_OPEN_ARROW,
+            scale: 2,
+            strokeColor: "#00f5ff",
+            strokeOpacity: 0.7,
+          },
+          repeat: "60px",
+        },
+      ],
+    });
+  }
+}
+
+function buildDevicePopup(lat, lng) {
+  return `<div style="background:#050d1e;color:#e8f4ff;padding:12px;min-width:200px;font-family:Rajdhani,sans-serif;border-radius:8px;">
+    <div style="font-family:Orbitron,monospace;color:#00f5ff;font-size:0.65rem;letter-spacing:2px;margin-bottom:8px;">📡 IoT DEVICE</div>
+    <div style="font-size:0.8rem;color:#a0b8d8;">ID: <span style="color:#00f5ff;">${state.deviceId || "IOT-001"}</span></div>
+    <div style="font-size:0.88rem;margin-top:6px;">
+      Lat: <b style="color:#00ff88;">${lat.toFixed(6)}</b><br/>
+      Lng: <b style="color:#00ff88;">${lng.toFixed(6)}</b>
+    </div>
+  </div>`;
+}
+
+// ─── Hide Map Loading Overlay ──────────────────────────────────
+function hideMapLoading() {
+  if (DOM.mapLoadingOverlay) {
+    DOM.mapLoadingOverlay.style.opacity = "0";
+    setTimeout(() => {
+      DOM.mapLoadingOverlay.style.display = "none";
+    }, 500);
+  }
+}
+
+// ─── IoT Location Polling ─────────────────────────────────────
+async function fetchIoTLocation() {
+  try {
+    const res = await fetch("/api/iot/location");
+    const data = await res.json();
+    if (!data.success) return;
+
+    const { lat, lng, deviceId, speed, signal, battery, lastUpdate } =
+      data.data;
+
+    state.prevLat = state.lat;
+    state.prevLng = state.lng;
+    state.lat = parseFloat(lat);
+    state.lng = parseFloat(lng);
+    state.lastFetchTime = new Date();
+    state.deviceId = deviceId;
+
+    DOM.coordLat.textContent = `${Math.abs(state.lat).toFixed(6)}°${state.lat >= 0 ? "N" : "S"}`;
+    DOM.coordLng.textContent = `${Math.abs(state.lng).toFixed(6)}°${state.lng >= 0 ? "E" : "W"}`;
+    if (DOM.deviceId) DOM.deviceId.textContent = deviceId;
+    DOM.deviceSpeed.textContent = Math.round(speed || 0);
+    DOM.deviceSignal.textContent = signal || "Strong";
+
+    // Only use server battery if real device battery not available
+    if (realBatteryLevel === null) {
+      const battVal = parseFloat(battery).toFixed(0);
+      DOM.batteryPct.textContent = battVal + "%";
+      DOM.batteryBar.style.width = battVal + "%";
+      if (battVal < 20) {
+        DOM.batteryBar.style.background = "var(--danger)";
+        DOM.batteryBar.style.boxShadow = "0 0 8px var(--danger)";
+      } else if (battVal < 40) {
+        DOM.batteryBar.style.background = "var(--warning)";
+        DOM.batteryBar.style.boxShadow = "0 0 8px var(--warning)";
+      }
+    }
+
+    const updateDate = new Date(lastUpdate);
+    DOM.lastUpdateTime.textContent = updateDate.toLocaleTimeString();
+    DOM.updateTimeAgo.textContent = "just now";
+
+    if (map) updateDeviceMarker(state.lat, state.lng);
+
+    // Live navigation update — recalculate if moved >10m
+    if (navState.active) {
+      const movedEnough =
+        navState.lastUpdateLat === null ||
+        getDistanceKm(
+          state.lat,
+          state.lng,
+          navState.lastUpdateLat,
+          navState.lastUpdateLng,
+        ) > 0.01;
+      if (movedEnough) {
+        navState.lastUpdateLat = state.lat;
+        navState.lastUpdateLng = state.lng;
+        updateLiveNavPanel();
+      }
+    }
+
+    if (!state.mapReady && map) {
+      map.panTo({ lat: state.lat, lng: state.lng });
+      map.setZoom(15);
+      state.mapReady = true;
+      hideMapLoading();
+      fetchNearbyServices(state.lat, state.lng);
+    }
+  } catch (err) {
+    console.warn("IoT fetch error:", err.message);
+    showToast("IoT connection error. Retrying...", "warning", 3000);
+  }
+}
+
+// ─── Fetch Nearby Services (Google Places API) ────────────────
+function fetchNearbyServices(lat, lng, radius = 5000) {
+  showToast("Scanning nearby emergency services...", "info", 2500);
+
+  // Try Google Places API first; fallback to Overpass (OpenStreetMap real data)
+  if (placesService) {
+    let hospitalsResult = null;
+    let policeResult = null;
+
+    function checkDone() {
+      if (hospitalsResult === null || policeResult === null) return;
+
+      const mapResults = (arr, type) =>
+        (arr || [])
+          .filter(p => p.geometry)
+          .map(p => ({
+            id: p.place_id,
+            name: p.name,
+            lat: p.geometry.location.lat(),
+            lng: p.geometry.location.lng(),
+            phone: null,
+            address: p.vicinity || "",
+            type,
+            dist: getDistanceKm(
+              lat,
+              lng,
+              p.geometry.location.lat(),
+              p.geometry.location.lng(),
+            ),
+          }))
+          .sort((a, b) => a.dist - b.dist)
+          .slice(0, 12);
+
+      const hospitals = mapResults(hospitalsResult, "hospital");
+      const police = mapResults(policeResult, "police");
+
+      if (hospitals.length === 0 && police.length === 0) {
+        // Places API returned nothing — use Overpass real data
+        fetchOverpassServices(lat, lng, radius);
+        return;
+      }
+
+      // Enrich all facilities with phone numbers via getDetails
+      const allFacilities = [...hospitals, ...police];
+      let enriched = 0;
+      const totalToEnrich = allFacilities.length;
+
+      function onEnrichDone() {
+        enriched++;
+        if (enriched === totalToEnrich) {
+          state.hospitals = hospitals;
+          state.policeStations = police;
+          applyFacilityResults();
+        }
+      }
+
+      if (totalToEnrich === 0) {
+        state.hospitals = hospitals;
+        state.policeStations = police;
+        applyFacilityResults();
+        return;
+      }
+
+      allFacilities.forEach(f => {
+        placesService.getDetails(
+          {
+            placeId: f.id,
+            fields: ["formatted_phone_number", "international_phone_number"],
+          },
+          (place, status) => {
+            if (status === google.maps.places.PlacesServiceStatus.OK && place) {
+              f.phone =
+                place.formatted_phone_number ||
+                place.international_phone_number ||
+                null;
+            } else if (status !== google.maps.places.PlacesServiceStatus.OK) {
+              console.warn(`[Places getDetails] ${f.name}: status = ${status}`);
+            }
+            onEnrichDone();
+          },
+        );
+      });
+    }
+
+    placesService.nearbySearch(
+      { location: { lat, lng }, radius, type: "hospital" },
+      (results, status) => {
+        hospitalsResult =
+          status === google.maps.places.PlacesServiceStatus.OK ? results : [];
+        checkDone();
+      },
+    );
+    placesService.nearbySearch(
+      { location: { lat, lng }, radius, type: "police" },
+      (results, status) => {
+        policeResult =
+          status === google.maps.places.PlacesServiceStatus.OK ? results : [];
+        checkDone();
+      },
+    );
+  } else {
+    fetchOverpassServices(lat, lng, radius);
+  }
+}
+
+// ─── Overpass API (OpenStreetMap) — real data, no billing needed ──────────────
+async function fetchOverpassServices(lat, lng, radius = 5000) {
+  const query = `
+    [out:json][timeout:30];
+    (
+      node["amenity"="hospital"](around:${radius},${lat},${lng});
+      way["amenity"="hospital"](around:${radius},${lat},${lng});
+      node["amenity"="clinic"](around:${radius},${lat},${lng});
+      node["amenity"="doctors"](around:${radius},${lat},${lng});
+      node["amenity"="police"](around:${radius},${lat},${lng});
+      way["amenity"="police"](around:${radius},${lat},${lng});
+    );
+    out center;
+  `;
+
+  try {
+    const res = await fetch("https://overpass-api.de/api/interpreter", {
+      method: "POST",
+      body: "data=" + encodeURIComponent(query),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    });
+    if (!res.ok) throw new Error("Overpass unavailable");
+    const data = await res.json();
+
+    const hospitals = [];
+    const police = [];
+
+    (data.elements || []).forEach(el => {
+      const elLat = el.lat ?? el.center?.lat;
+      const elLng = el.lon ?? el.center?.lon;
+      if (!elLat || !elLng) return;
+      const item = {
+        id: el.id,
+        name: el.tags?.name || el.tags?.["name:en"] || "Unknown Facility",
+        lat: elLat,
+        lng: elLng,
+        phone:
+          el.tags?.phone ||
+          el.tags?.["contact:phone"] ||
+          el.tags?.["contact:mobile"] ||
+          el.tags?.["phone:mobile"] ||
+          el.tags?.["contact:telephone"] ||
+          el.tags?.telephone ||
+          null,
+        address:
+          el.tags?.["addr:street"] ||
+          el.tags?.["addr:full"] ||
+          el.tags?.["addr:suburb"] ||
+          "",
+        type: el.tags?.amenity,
+        dist: getDistanceKm(lat, lng, elLat, elLng),
+      };
+      if (
+        item.type === "hospital" ||
+        item.type === "clinic" ||
+        item.type === "doctors"
+      ) {
+        hospitals.push(item);
+      } else if (item.type === "police") {
+        police.push(item);
+      }
+    });
+
+    hospitals.sort((a, b) => a.dist - b.dist);
+    police.sort((a, b) => a.dist - b.dist);
+    state.hospitals = hospitals.slice(0, 12);
+    state.policeStations = police.slice(0, 12);
+    applyFacilityResults();
+  } catch (err) {
+    console.warn("Overpass error:", err.message);
+    showToast("Could not load real data — retrying in 10s", "warning", 3000);
+    setTimeout(() => fetchOverpassServices(lat, lng, radius), 10000);
+  }
+}
+
+async function applyFacilityResults() {
+  // ── Enrich with real road distances (OSRM Table API) ──
+  const allFacilities = [...state.hospitals, ...state.policeStations];
+  await enrichWithRoadDistances(allFacilities, state.lat, state.lng);
+
+  // Re-sort by road distance after enrichment
+  state.hospitals.sort((a, b) => a.dist - b.dist);
+  state.policeStations.sort((a, b) => a.dist - b.dist);
+
+  renderFacilityCards();
+  renderFacilityMarkers();
+  DOM.hospitalCount.textContent = state.hospitals.length;
+  DOM.policeCount.textContent = state.policeStations.length;
+  DOM.hospitalCountBadge.textContent = state.hospitals.length;
+  DOM.policeCountBadge.textContent = state.policeStations.length;
+  showToast(
+    `Found ${state.hospitals.length} hospitals, ${state.policeStations.length} police stations`,
+    "success",
+  );
+}
+
+// ─── Phone button HTML helper ───────────────────────────────
+function phoneButtonHTML(f) {
+  if (f.phone) {
+    return `<a href="tel:${f.phone}" class="facility-action-btn call">📞 ${f.phone}</a>`;
+  }
+  return `<a href="https://www.google.com/search?q=${encodeURIComponent(f.name + ' phone number contact')}" target="_blank" rel="noopener" class="facility-action-btn call" style="opacity:0.75;font-size:0.68rem;">🔍 Find Number</a>`;
+}
+
+// ─── Distance Calculator (Haversine — straight-line fallback) ────────────────
+function getDistanceKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// ─── Format seconds to human-readable duration ───────────────
+function formatDuration(secs) {
+  if (secs < 60) return `${Math.round(secs)} sec`;
+  if (secs < 3600) return `${Math.round(secs / 60)} min`;
+  return `${Math.floor(secs / 3600)}h ${Math.round((secs % 3600) / 60)}m`;
+}
+
+// ─── Enrich facilities with real road distances via OSRM Table API ───────────
+async function enrichWithRoadDistances(facilities, originLat, originLng) {
+  if (!facilities || facilities.length === 0) return;
+  try {
+    const coords =
+      `${originLng},${originLat};` +
+      facilities.map(f => `${f.lng},${f.lat}`).join(";");
+    const url =
+      `https://router.project-osrm.org/table/v1/driving/${coords}` +
+      `?sources=0&annotations=distance,duration`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("OSRM Table unavailable");
+    const data = await res.json();
+    if (
+      data.code === "Ok" &&
+      data.distances &&
+      data.distances[0] &&
+      data.durations &&
+      data.durations[0]
+    ) {
+      facilities.forEach((f, i) => {
+        const distM = data.distances[0][i + 1]; // index 0 is the origin itself
+        const durS = data.durations[0][i + 1];
+        if (distM != null && distM > 0) f.dist = distM / 1000; // metres → km
+        if (durS != null && durS > 0) f.duration = durS;
+      });
+    }
+  } catch (err) {
+    console.warn("Road distance enrichment failed (using straight-line):", err.message);
+  }
+}
+
+// ─── Render Facility Cards ────────────────────────────────────
+function renderFacilityCards() {
+  renderList(
+    DOM.hospitalsList,
+    state.hospitals,
+    "hospital",
+    "🏥",
+    "var(--accent-orange)",
+  );
+  renderList(DOM.policeList, state.policeStations, "police", "🚔", "#0096ff");
+}
+
+function renderList(container, items, type, icon, color) {
+  if (items.length === 0) {
+    container.innerHTML = `
+      <div style="text-align:center;padding:30px;color:var(--text-muted);
+        font-family:var(--font-tech);font-size:0.65rem;letter-spacing:2px;">
+        NO ${type.toUpperCase()}S FOUND NEARBY
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = items
+    .map(
+      (f, idx) => `
+    <div class="facility-card ${type}-card" data-id="${f.id}" data-lat="${f.lat}" data-lng="${f.lng}">
+      <div class="facility-card-top">
+        <div class="facility-type-icon">${icon}</div>
+        <div class="facility-info">
+          <div class="facility-name" title="${f.name}">${f.name}</div>
+          <div class="facility-distance">
+            <span>📍</span>
+            <span class="dist-value">${f.dist.toFixed(2)} km</span>
+            ${f.duration ? `<span style="color:var(--text-muted);font-size:0.68rem;">&nbsp;· ${formatDuration(f.duration)}</span>` : ""}
+            away
+            ${idx === 0 ? '<span style="margin-left:6px;padding:1px 8px;background:rgba(0,255,136,0.15);border:1px solid rgba(0,255,136,0.4);border-radius:10px;font-size:0.58rem;color:var(--success);">NEAREST</span>' : ""}
+          </div>
+          ${f.address ? `<div style="font-size:0.7rem;color:var(--text-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">📌 ${f.address}</div>` : ""}
+        </div>
+      </div>
+      <div class="facility-actions">
+        <span data-phone-slot="${f.id}">${phoneButtonHTML(f)}</span>
+        <button class="facility-action-btn navigate" onclick="navigateToFacility(${f.lat}, ${f.lng}, '${f.name.replace(/'/g, "\\'")}')">
+          🗺 Navigate
+        </button>
+      </div>
+    </div>
+  `,
+    )
+    .join("");
+
+  container.querySelectorAll(".facility-card").forEach(card => {
+    card.addEventListener("click", e => {
+      if (e.target.closest(".facility-action-btn")) return;
+      const lat = parseFloat(card.dataset.lat);
+      const lng = parseFloat(card.dataset.lng);
+      if (map) {
+        map.panTo({ lat, lng });
+        map.setZoom(17);
+      }
+    });
+  });
+}
+
+// ─── Navigate to Facility (OSRM free routing + live HUD) ─────
+let routePolyline = null;
+
+window.navigateToFacility = async function (destLat, destLng, name) {
+  infoWindow.close();
+
+  // Set nav state
+  navState.active = true;
+  navState.destLat = destLat;
+  navState.destLng = destLng;
+  navState.destName = name;
+  navState.lastUpdateLat = null;
+  navState.lastUpdateLng = null;
+
+  showNavHUD(name, "--", "--", "Calculating...");
+  showToast(`🗺 Navigating to ${name}...`, "info", 2000);
+
+  await updateLiveNavPanel();
+};
+
+// Called on every location update while navigating
+async function updateLiveNavPanel() {
+  if (!navState.active) return;
+  const { destLat, destLng, destName } = navState;
+  const oLat = state.lat;
+  const oLng = state.lng;
+
+  // Check if arrived (within 30m)
+  const distNow = getDistanceKm(oLat, oLng, destLat, destLng);
+  if (distNow < 0.03) {
+    updateNavHUD(destName, "0 m", "0 min", "🎯 You have arrived!");
+    clearRoutePolyline();
+    showToast(`🎯 Arrived at ${destName}!`, "success", 6000);
+    navState.active = false;
+    return;
+  }
+
+  try {
+    const url =
+      `https://router.project-osrm.org/route/v1/driving/` +
+      `${oLng},${oLat};${destLng},${destLat}` +
+      `?overview=full&geometries=geojson`;
+
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (!data.routes || data.routes.length === 0) throw new Error("No route");
+
+    const route = data.routes[0];
+    const coords = route.geometry.coordinates.map(([lng, lat]) => ({
+      lat,
+      lng,
+    }));
+    const distM = route.distance;
+    const secs = route.duration;
+
+    // Format distance
+    const distStr =
+      distM >= 1000
+        ? `${(distM / 1000).toFixed(1)} km`
+        : `${Math.round(distM)} m`;
+
+    // Format time
+    let timeStr;
+    if (secs < 60) timeStr = `${Math.round(secs)} sec`;
+    else if (secs < 3600) timeStr = `${Math.round(secs / 60)} min`;
+    else
+      timeStr = `${Math.floor(secs / 3600)}h ${Math.round((secs % 3600) / 60)}m`;
+
+    // ETA
+    const eta = new Date(Date.now() + secs * 1000);
+    const etaStr = eta.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    // Redraw route polyline
+    clearRoutePolyline();
+    routePolyline = new google.maps.Polyline({
+      path: coords,
+      strokeColor: "#00ff88",
+      strokeOpacity: 0.9,
+      strokeWeight: 6,
+      map,
+      zIndex: 200,
+    });
+
+    // First call: fit bounds
+    if (navState.lastUpdateLat === null || navState.firstFit !== false) {
+      navState.firstFit = false;
+      const bounds = new google.maps.LatLngBounds();
+      coords.forEach(c => bounds.extend(c));
+      map.fitBounds(bounds, { top: 80, right: 60, bottom: 160, left: 60 });
+    }
+
+    updateNavHUD(destName, distStr, timeStr, `ETA ${etaStr}`);
+  } catch (err) {
+    console.warn("Nav update error:", err.message);
+    // Fallback: show straight-line distance
+    const distStr =
+      distNow >= 1
+        ? `~${distNow.toFixed(1)} km`
+        : `~${Math.round(distNow * 1000)} m`;
+    updateNavHUD(destName, distStr, "--", "Recalculating...");
+  }
+}
+
+// ─── Nav HUD Panel ────────────────────────────────────────────
+function showNavHUD(name, dist, time, eta) {
+  clearNavHUD();
+  const mapEl = document.getElementById("map");
+  mapEl.style.position = "relative";
+
+  const hud = document.createElement("div");
+  hud.id = "navHUD";
+  hud.innerHTML = `
+    <div id="navHUD-inner">
+      <div id="navHUD-dest">🗺 <span id="navHUD-name">${name}</span></div>
+      <div id="navHUD-stats">
+        <div class="navHUD-stat">
+          <div id="navHUD-dist">${dist}</div>
+          <div class="navHUD-label">DISTANCE</div>
+        </div>
+        <div class="navHUD-divider"></div>
+        <div class="navHUD-stat">
+          <div id="navHUD-time">${time}</div>
+          <div class="navHUD-label">TIME LEFT</div>
+        </div>
+        <div class="navHUD-divider"></div>
+        <div class="navHUD-stat">
+          <div id="navHUD-eta">${eta}</div>
+          <div class="navHUD-label">ETA</div>
+        </div>
+      </div>
+      <button id="navHUD-cancel">✖ END</button>
+    </div>`;
+
+  const style = document.createElement("style");
+  style.id = "navHUD-style";
+  style.textContent = `
+    #navHUD {
+      position: absolute;
+      bottom: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 9999;
+      pointer-events: auto;
+      animation: navFadeIn 0.4s ease;
+    }
+    @keyframes navFadeIn { from{opacity:0;transform:translateX(-50%) translateY(20px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
+    #navHUD-inner {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: rgba(5,13,30,0.97);
+      border: 1px solid rgba(0,255,136,0.4);
+      border-radius: 16px;
+      padding: 12px 18px;
+      box-shadow: 0 0 24px rgba(0,255,136,0.25), 0 4px 20px rgba(0,0,0,0.6);
+      font-family: Rajdhani, sans-serif;
+      min-width: 380px;
+      max-width: 90vw;
+    }
+    #navHUD-dest {
+      font-family: Orbitron, monospace;
+      font-size: 0.6rem;
+      color: #00ff88;
+      letter-spacing: 1px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 130px;
+    }
+    #navHUD-name { color: #e8f4ff; font-family: Rajdhani,sans-serif; font-size:0.85rem; font-weight:600; }
+    #navHUD-stats { display:flex; align-items:center; gap:10px; flex:1; justify-content:center; }
+    .navHUD-stat { text-align:center; min-width:64px; }
+    #navHUD-dist { font-family:Orbitron,monospace; font-size:1.1rem; color:#00ff88; font-weight:700; line-height:1; }
+    #navHUD-time { font-family:Orbitron,monospace; font-size:1.1rem; color:#00cfff; font-weight:700; line-height:1; }
+    #navHUD-eta  { font-family:Orbitron,monospace; font-size:0.85rem; color:#ffaa00; font-weight:700; line-height:1; }
+    .navHUD-label { font-size:0.55rem; color:#556; letter-spacing:1.5px; margin-top:3px; font-family:Orbitron,monospace; }
+    .navHUD-divider { width:1px; height:36px; background:rgba(0,255,136,0.2); }
+    #navHUD-cancel {
+      background: rgba(255,68,102,0.12);
+      color: #ff4466;
+      border: 1px solid rgba(255,68,102,0.4);
+      border-radius: 10px;
+      padding: 6px 14px;
+      font-family: Orbitron,monospace;
+      font-size: 0.65rem;
+      letter-spacing: 1px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.2s;
+    }
+    #navHUD-cancel:hover { background: rgba(255,68,102,0.25); }
+  `;
+  document.head.appendChild(style);
+  mapEl.appendChild(hud);
+  document.getElementById("navHUD-cancel").addEventListener("click", () => {
+    clearRoute();
+    showToast("Navigation ended", "info", 2000);
+  });
+}
+
+function updateNavHUD(name, dist, time, eta) {
+  const d = document.getElementById("navHUD-dist");
+  const t = document.getElementById("navHUD-time");
+  const e = document.getElementById("navHUD-eta");
+  const n = document.getElementById("navHUD-name");
+  if (d) d.textContent = dist;
+  if (t) t.textContent = time;
+  if (e) e.textContent = eta;
+  if (n) n.textContent = name;
+}
+
+function clearNavHUD() {
+  const h = document.getElementById("navHUD");
+  const s = document.getElementById("navHUD-style");
+  if (h) h.remove();
+  if (s) s.remove();
+}
+
+function clearRoutePolyline() {
+  if (routePolyline) {
+    routePolyline.setMap(null);
+    routePolyline = null;
+  }
+}
+
+function clearRoute() {
+  navState.active = false;
+  navState.firstFit = true;
+  clearRoutePolyline();
+  clearNavHUD();
+}
+
+// ─── Render Facility Markers on Map ──────────────────────────
+function renderFacilityMarkers() {
+  facilityMarkers.hospitals.forEach(m => m.setMap(null));
+  facilityMarkers.police.forEach(m => m.setMap(null));
+  facilityMarkers.hospitals = [];
+  facilityMarkers.police = [];
+
+  if (!map) return;
+
+  if (state.activeFilter === "all" || state.activeFilter === "hospital") {
+    state.hospitals.forEach((h, i) => {
+      const marker = new google.maps.Marker({
+        position: { lat: h.lat, lng: h.lng },
+        map,
+        icon: {
+          url: hospitalIconUrl(),
+          scaledSize: new google.maps.Size(36, 36),
+          anchor: new google.maps.Point(18, 18),
+        },
+        title: h.name,
+        zIndex: 500,
+      });
+      marker.addListener("click", () => {
+        infoWindow.setContent(buildPopup(h, "🏥", "#ff6b35", i === 0));
+        infoWindow.open(map, marker);
+      });
+      facilityMarkers.hospitals.push(marker);
+    });
+  }
+
+  if (state.activeFilter === "all" || state.activeFilter === "police") {
+    state.policeStations.forEach((p, i) => {
+      const marker = new google.maps.Marker({
+        position: { lat: p.lat, lng: p.lng },
+        map,
+        icon: {
+          url: policeIconUrl(),
+          scaledSize: new google.maps.Size(36, 36),
+          anchor: new google.maps.Point(18, 18),
+        },
+        title: p.name,
+        zIndex: 500,
+      });
+      marker.addListener("click", () => {
+        infoWindow.setContent(buildPopup(p, "🚔", "#0096ff", i === 0));
+        infoWindow.open(map, marker);
+      });
+      facilityMarkers.police.push(marker);
+    });
+  }
+}
+
+function buildPopup(facility, icon, color, isNearest) {
+  return `
+    <div style="background:#050d1e;color:#e8f4ff;padding:14px;min-width:220px;font-family:Rajdhani,sans-serif;border-radius:8px;border:1px solid ${color}44;">
+      <div style="font-family:Orbitron,monospace;color:${color};font-size:0.62rem;letter-spacing:2px;margin-bottom:8px;">
+        ${icon} ${(facility.type || "FACILITY").toUpperCase()}
+        ${isNearest ? `<span style="margin-left:8px;padding:2px 8px;background:rgba(0,255,136,0.15);border:1px solid rgba(0,255,136,0.4);border-radius:10px;font-size:0.55rem;color:#00ff88;">NEAREST</span>` : ""}
+      </div>
+      <div style="font-weight:600;font-size:0.95rem;margin-bottom:6px;">${facility.name}</div>
+      ${facility.address ? `<div style="font-size:0.78rem;color:#7090b0;margin-bottom:6px;">📌 ${facility.address}</div>` : ""}
+      <div style="font-size:0.8rem;color:#a0c0e0;margin-bottom:8px;">📍 <b style="color:${color};">${facility.dist.toFixed(2)} km</b>${facility.duration ? ` &nbsp;·&nbsp; <span style="color:#ffaa00;">${formatDuration(facility.duration)}</span>` : ""} away</div>
+      <div style="display:flex;gap:8px;">
+        ${
+          facility.phone
+            ? `<a href="tel:${facility.phone}" style="flex:1;padding:7px;background:rgba(0,255,136,0.1);border:1px solid rgba(0,255,136,0.3);border-radius:6px;color:#00ff88;text-decoration:none;text-align:center;font-size:0.75rem;font-family:Orbitron,monospace;letter-spacing:0.5px;">📞 CALL</a>`
+            : `<a href="https://www.google.com/search?q=${encodeURIComponent(facility.name + ' phone number contact')}" target="_blank" rel="noopener" style="flex:1;padding:7px;background:rgba(255,170,0,0.08);border:1px solid rgba(255,170,0,0.3);border-radius:6px;color:#ffaa00;text-decoration:none;text-align:center;font-size:0.7rem;font-family:Orbitron,monospace;letter-spacing:0.5px;">🔍 FIND #</a>`
+        }
+        <button onclick="window.navigateToFacility(${facility.lat}, ${facility.lng}, '${facility.name.replace(/'/g, "\\'")}')" style="flex:1;padding:7px;background:rgba(0,150,255,0.1);border:1px solid rgba(0,150,255,0.3);border-radius:6px;color:#0096ff;cursor:pointer;font-size:0.75rem;font-family:Orbitron,monospace;letter-spacing:0.5px;">🗺 NAV</button>
+      </div>
+    </div>`;
+}
+
+// ─── Map Filter Buttons ───────────────────────────────────────
+document.querySelectorAll(".filter-btn[data-filter]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document
+      .querySelectorAll(".filter-btn[data-filter]")
+      .forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    state.activeFilter = btn.dataset.filter;
+    renderFacilityCards();
+    renderFacilityMarkers();
+  });
+});
+
+// Tab switching
+document.querySelectorAll(".sidebar-tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document
+      .querySelectorAll(".sidebar-tab")
+      .forEach(t => t.classList.remove("active"));
+    document
+      .querySelectorAll(".tab-panel")
+      .forEach(p => p.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById(`tab-${tab.dataset.tab}`).classList.add("active");
+  });
+});
+
+// Refresh button
+document.getElementById("btnRefreshMap").addEventListener("click", () => {
+  fetchNearbyServices(state.lat, state.lng);
+});
+
+// Center map
+document.getElementById("btnCenterMap").addEventListener("click", () => {
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      position => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        if (map) {
+          map.panTo({ lat, lng });
+          map.setZoom(15);
+        }
+      },
+      error => {
+        // fallback to state.lat/lng if geolocation fails
+        if (map && state.lat && state.lng) {
+          map.panTo({ lat: state.lat, lng: state.lng });
+          map.setZoom(15);
+        }
+        alert("Unable to fetch your location. Using device location instead.");
+      },
+    );
+  } else {
+    // fallback if geolocation is not supported
+    if (map && state.lat && state.lng) {
+      map.panTo({ lat: state.lat, lng: state.lng });
+      map.setZoom(15);
+    }
+    alert("Geolocation is not supported by your browser.");
+  }
+});
+
+// Fullscreen
+document.getElementById("btnFullscreen").addEventListener("click", () => {
+  const el = document.getElementById("map");
+  if (!document.fullscreenElement) {
+    el.requestFullscreen();
+  } else {
+    document.exitFullscreen();
+  }
+});
+
+// ─── SOS Alarm Audio ─────────────────────────────────────────
+const sosAlarm = new Audio("/sos-alarm.mp3");
+sosAlarm.loop = true;
+let sosAlarmKeepAlive = null;
+
+function playSosAlarm() {
+  sosAlarm.currentTime = 0;
+  sosAlarm.play().catch(e => console.warn("Audio play blocked:", e));
+
+  // Restart on end (loop fallback)
+  sosAlarm.onended = () => {
+    if (state.sosActive) {
+      sosAlarm.currentTime = 0;
+      sosAlarm.play().catch(() => {});
+    }
+  };
+
+  // Keepalive: if audio paused unexpectedly, restart it
+  if (sosAlarmKeepAlive) clearInterval(sosAlarmKeepAlive);
+  sosAlarmKeepAlive = setInterval(() => {
+    if (!state.sosActive) {
+      clearInterval(sosAlarmKeepAlive);
+      sosAlarmKeepAlive = null;
+      return;
+    }
+    if (sosAlarm.paused) {
+      sosAlarm.play().catch(() => {});
+    }
+  }, 500);
+}
+
+function stopSosAlarm() {
+  if (sosAlarmKeepAlive) {
+    clearInterval(sosAlarmKeepAlive);
+    sosAlarmKeepAlive = null;
+  }
+  sosAlarm.onended = null;
+  sosAlarm.pause();
+  sosAlarm.currentTime = 0;
+}
+window.stopSosAlarm = stopSosAlarm;
+
+// ─── SOS Button ───────────────────────────────────────────────
+let sosHoldTimer = null;
+let sosProgress = 0;
+
+DOM.sosBtn.addEventListener("mousedown", startSosHold);
+DOM.sosBtn.addEventListener("touchstart", startSosHold, { passive: true });
+DOM.sosBtn.addEventListener("mouseup", cancelSosHold);
+DOM.sosBtn.addEventListener("mouseleave", cancelSosHold);
+DOM.sosBtn.addEventListener("touchend", cancelSosHold);
+
+function startSosHold() {
+  if (state.sosActive) return;
+  sosProgress = 0;
+  DOM.sosBtn.style.transform = "scale(0.95)";
+  sosHoldTimer = setInterval(() => {
+    sosProgress += 10;
+    DOM.sosBtn.style.background = `conic-gradient(#ff2244 ${sosProgress * 3.6}deg, #cc0033 ${sosProgress * 3.6}deg)`;
+    if (sosProgress >= 100) {
+      clearInterval(sosHoldTimer);
+      triggerSOS();
+    }
+  }, 100);
+}
+
+function cancelSosHold() {
+  if (sosHoldTimer) {
+    clearInterval(sosHoldTimer);
+    sosHoldTimer = null;
+  }
+  if (!state.sosActive) {
+    DOM.sosBtn.style.transform = "";
+    DOM.sosBtn.style.background = "";
+  }
+  sosProgress = 0;
+}
+
+async function triggerSOS() {
+  state.sosActive = true;
+  DOM.sosBtn.style.background = "linear-gradient(135deg, #880022, #ff2244)";
+  DOM.sosBtn.style.transform = "scale(1)";
+
+  playSosAlarm();
+  showToast("🚨 SOS ALERT SENT! Emergency services notified!", "error", 8000);
+  DOM.sosBanner.classList.add("danger");
+  DOM.sosBanner.style.display = "flex";
+
+  try {
+    await fetch("/api/sos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: CURRENT_USER?.id,
+        lat: state.lat,
+        lng: state.lng,
+        message: `EMERGENCY from ${CURRENT_USER?.name || "Unknown"} at ${state.lat.toFixed(6)}, ${state.lng.toFixed(6)}`,
+      }),
+    });
+  } catch (err) {
+    console.warn("SOS backend error:", err);
+  }
+
+  const logEntry = {
+    id: Date.now(),
+    time: new Date().toLocaleTimeString(),
+    lat: state.lat.toFixed(5),
+    lng: state.lng.toFixed(5),
+    user: CURRENT_USER?.name || "Unknown",
+  };
+  state.sosLog.unshift(logEntry);
+  renderSosLog();
+
+  // SOS ring on map
+  if (map && sosCircle) {
+    sosCircle.setMap(null);
+    sosCircle = null;
+  }
+  if (map) {
+    sosCircle = new google.maps.Circle({
+      map,
+      center: { lat: state.lat, lng: state.lng },
+      radius: 200,
+      strokeColor: "#ff2244",
+      strokeOpacity: 0.8,
+      strokeWeight: 2,
+      fillColor: "#ff2244",
+      fillOpacity: 0.1,
+    });
+  }
+
+  setTimeout(() => {
+    state.sosActive = false;
+    DOM.sosBtn.style.background = "";
+    if (sosCircle) {
+      sosCircle.setMap(null);
+      sosCircle = null;
+    }
+  }, 30000);
+}
+
+function renderSosLog() {
+  if (state.sosLog.length === 0) return;
+  DOM.sosLogList.innerHTML = state.sosLog
+    .map(
+      log => `
+    <div style="background:rgba(255,34,68,0.08);border:1px solid rgba(255,34,68,0.3);border-radius:8px;padding:10px 12px;">
+      <div style="font-family:var(--font-tech);font-size:0.62rem;color:var(--danger);letter-spacing:1.5px;margin-bottom:4px;">
+        🚨 SOS TRANSMITTED — ${log.time}
+      </div>
+      <div style="font-size:0.75rem;color:var(--text-secondary);">📍 ${log.lat}, ${log.lng}</div>
+    </div>
+  `,
+    )
+    .join("");
+}
+
+// ─── Inject CSS (Google Maps InfoWindow dark theme) ────────────
+const style = document.createElement("style");
+style.textContent = `
+  @keyframes sosRipple {
+    0% { transform: scale(1); opacity: 1; }
+    100% { transform: scale(2.5); opacity: 0; }
+  }
+  @keyframes sosPulse {
+    0%, 100% { box-shadow: 0 0 15px rgba(255,107,53,0.7); }
+    50% { box-shadow: 0 0 30px rgba(255,107,53,1), 0 0 60px rgba(255,107,53,0.3); }
+  }
+  .gm-style .gm-style-iw-c {
+    background: #050d1e !important;
+    border: 1px solid rgba(0,245,255,0.3) !important;
+    border-radius: 10px !important;
+    box-shadow: 0 0 30px rgba(0,245,255,0.15) !important;
+    padding: 0 !important;
+  }
+  .gm-style .gm-style-iw-d { overflow: auto !important; }
+  .gm-style .gm-style-iw-t::after {
+    background: #050d1e !important;
+    box-shadow: none !important;
+  }
+  .gm-style-iw-chr { display: none !important; }
+  .gm-ui-hover-effect { display: none !important; }
+`;
+document.head.appendChild(style);
+
+// ─── Update "time ago" every 5s ───────────────────────────────
+setInterval(() => {
+  if (!state.lastFetchTime) return;
+  const diff = Math.round((Date.now() - state.lastFetchTime) / 1000);
+  DOM.updateTimeAgo.textContent = diff < 10 ? "just now" : `${diff}s ago`;
+}, 5000);

@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SEAP — Smart Emergency Assistance Platform</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🆘</text></svg>"
+    />
+    <link rel="stylesheet" href="css/global.css" />
+    <link rel="stylesheet" href="css/auth.css" />
+  </head>
+  <body>
+    <!-- Particle Canvas -->
+    <canvas id="particle-canvas"></canvas>
+
+    <!-- Grid & Scanlines -->
+    <div class="grid-bg"></div>
+    <div class="scanlines"></div>
+
+    <!-- Floating Orbs -->
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+
+    <!-- Corner Decorations -->
+    <div class="corner-decor top-left"></div>
+    <div class="corner-decor top-right"></div>
+    <div class="corner-decor bottom-left"></div>
+    <div class="corner-decor bottom-right"></div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Auth Layout -->
+    <div class="auth-layout">
+      <!-- LEFT: Branding Panel -->
+      <div class="auth-left">
+        <div class="auth-left-content">
+          <!-- Logo -->
+          <div class="platform-logo">
+            <div class="logo-icon">🆘</div>
+            <div class="logo-text">
+              <span class="logo-name">S.E.A.P</span>
+              <span class="logo-tagline">Emergency Intelligence System</span>
+            </div>
+          </div>
+
+          <!-- Hero Title -->
+          <h1
+            class="auth-hero-title glitch"
+            data-text="SMART EMERGENCY ASSISTANCE"
+          >
+            SMART EMERGENCY ASSISTANCE
+          </h1>
+
+          <p class="auth-hero-subtitle">
+            Real-time IoT-powered emergency platform. Your location. Your
+            safety. Nearest help — instantly.
+          </p>
+
+          <!-- Features -->
+          <div class="feature-list">
+            <div class="feature-item">
+              <div class="feature-icon">📡</div>
+              <div class="feature-text">
+                <span class="feature-title">Live IoT Tracking</span>
+                <span class="feature-desc"
+                  >Real-time GPS data from IoT device</span
+                >
+              </div>
+            </div>
+            <div class="feature-item">
+              <div class="feature-icon">🏥</div>
+              <div class="feature-text">
+                <span class="feature-title">Nearest Hospitals</span>
+                <span class="feature-desc"
+                  >Auto-detected emergency medical centres</span
+                >
+              </div>
+            </div>
+            <div class="feature-item">
+              <div class="feature-icon">🚔</div>
+              <div class="feature-text">
+                <span class="feature-title">Police Stations</span>
+                <span class="feature-desc"
+                  >Closest police stations with contacts</span
+                >
+              </div>
+            </div>
+            <div class="feature-item">
+              <div class="feature-icon">🆘</div>
+              <div class="feature-text">
+                <span class="feature-title">One-Tap SOS</span>
+                <span class="feature-desc"
+                  >Instant distress signal to all services</span
+                >
+              </div>
+            </div>
+          </div>
+
+          <!-- Stats -->
+          <div class="stats-row">
+            <div class="stat-item">
+              <span class="stat-value">100ms</span>
+              <span class="stat-label">Response</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-value">24/7</span>
+              <span class="stat-label">Active</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-value">IoT</span>
+              <span class="stat-label">Powered</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: Login Form -->
+      <div class="auth-right">
+        <div class="auth-form-container">
+          <div class="auth-form-header">
+            <h2 class="auth-form-title">ACCESS <span>PORTAL</span></h2>
+            <p class="auth-form-subtitle">
+              Sign in to your emergency dashboard
+            </p>
+          </div>
+
+          <!-- Error / Success Messages -->
+          <div class="error-msg" id="loginError">
+            <span>⚠</span> <span id="loginErrorText">Invalid credentials</span>
+          </div>
+          <div class="success-msg" id="loginSuccess">
+            <span>✓</span> <span>Login successful! Redirecting...</span>
+          </div>
+
+          <!-- Form Card -->
+          <div class="auth-form-card">
+            <form id="loginForm" autocomplete="off">
+              <!-- Email -->
+              <div class="form-group">
+                <label class="form-label" for="loginEmail">Email Address</label>
+                <div style="position: relative">
+                  <span class="input-icon">✉</span>
+                  <input
+                    type="email"
+                    id="loginEmail"
+                    class="form-input"
+                    placeholder="operator@example.com"
+                    required
+                    autocomplete="email"
+                  />
+                </div>
+              </div>
+
+              <!-- Password -->
+              <div class="form-group">
+                <label class="form-label" for="loginPassword">Password</label>
+                <div class="password-wrapper" style="position: relative">
+                  <span class="input-icon">🔒</span>
+                  <input
+                    type="password"
+                    id="loginPassword"
+                    class="form-input"
+                    placeholder="Enter your password"
+                    required
+                    autocomplete="current-password"
+                  />
+                  <button
+                    type="button"
+                    class="password-toggle"
+                    id="pwToggle"
+                    title="Toggle password"
+                  >
+                    👁
+                  </button>
+                </div>
+              </div>
+
+              <!-- Options -->
+              <div class="form-options">
+                <label class="remember-me">
+                  <input type="checkbox" id="rememberMe" /> Remember me
+                </label>
+                <a href="#" class="forgot-link">Forgot password?</a>
+              </div>
+
+              <!-- Submit -->
+              <button
+                type="submit"
+                class="btn-primary auth-btn-full"
+                id="loginBtn"
+              >
+                <span id="loginBtnText">AUTHENTICATE</span>
+                <span id="loginSpinner" class="spinner hidden"></span>
+              </button>
+            </form>
+          </div>
+
+          <!-- Divider -->
+          <div class="auth-divider">
+            <div class="divider-line"></div>
+            <span class="divider-text">New to SEAP?</span>
+            <div class="divider-line"></div>
+          </div>
+
+          <!-- Signup Link -->
+          <div class="auth-footer-link">
+            Don't have an account? <a href="signup.html">Create one now →</a>
+          </div>
+
+          <!-- Demo hint -->
+          <p
+            style="
+              text-align: center;
+              margin-top: 16px;
+              font-size: 0.75rem;
+              color: var(--text-muted);
+              font-family: var(--font-tech);
+              letter-spacing: 1px;
+            "
+          >
+            Demo: Use any registered credentials
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <script src="js/particles.js"></script>
+    <script src="js/auth.js"></script>
+    <script>
+      // Password toggle
+      document.getElementById("pwToggle").addEventListener("click", () => {
+        const pw = document.getElementById("loginPassword");
+        const btn = document.getElementById("pwToggle");
+        if (pw.type === "password") {
+          pw.type = "text";
+          btn.textContent = "🙈";
+        } else {
+          pw.type = "password";
+          btn.textContent = "👁";
+        }
+      });
+
+      // Login form
+      document
+        .getElementById("loginForm")
+        .addEventListener("submit", async e => {
+          e.preventDefault();
+          const email = document.getElementById("loginEmail").value.trim();
+          const password = document.getElementById("loginPassword").value;
+          const btn = document.getElementById("loginBtn");
+          const btnText = document.getElementById("loginBtnText");
+          const spinner = document.getElementById("loginSpinner");
+          const errorEl = document.getElementById("loginError");
+          const successEl = document.getElementById("loginSuccess");
+
+          // UI: loading state
+          btn.disabled = true;
+          btnText.textContent = "AUTHENTICATING...";
+          spinner.classList.remove("hidden");
+          errorEl.classList.remove("show");
+          successEl.classList.remove("show");
+
+          try {
+            const res = await fetch("/api/auth/login", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ email, password }),
+            });
+            const data = await res.json();
+
+            if (data.success) {
+              localStorage.setItem("seap_user", JSON.stringify(data.user));
+              successEl.classList.add("show");
+              btnText.textContent = "SUCCESS ✓";
+              showToast("Welcome back, " + data.user.name + "!", "success");
+              setTimeout(() => {
+                window.location.href = "dashboard.html";
+              }, 1200);
+            } else {
+              throw new Error(data.message || "Authentication failed");
+            }
+          } catch (err) {
+            document.getElementById("loginErrorText").textContent = err.message;
+            errorEl.classList.add("show");
+            btn.disabled = false;
+            btnText.textContent = "AUTHENTICATE";
+            spinner.classList.add("hidden");
+            showToast(err.message, "error");
+          }
+        });
+    </script>
+  </body>
+</html>

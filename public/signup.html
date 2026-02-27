@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SEAP — Create Account</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🆘</text></svg>"
+    />
+    <link rel="stylesheet" href="css/global.css" />
+    <link rel="stylesheet" href="css/auth.css" />
+  </head>
+  <body>
+    <canvas id="particle-canvas"></canvas>
+    <div class="grid-bg"></div>
+    <div class="scanlines"></div>
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+    <div class="corner-decor top-left"></div>
+    <div class="corner-decor top-right"></div>
+    <div class="corner-decor bottom-left"></div>
+    <div class="corner-decor bottom-right"></div>
+    <div class="toast-container" id="toastContainer"></div>
+
+    <div class="auth-layout">
+      <!-- LEFT: Branding Panel -->
+      <div class="auth-left">
+        <div class="auth-left-content">
+          <div class="platform-logo">
+            <div class="logo-icon">🆘</div>
+            <div class="logo-text">
+              <span class="logo-name">S.E.A.P</span>
+              <span class="logo-tagline">Emergency Intelligence System</span>
+            </div>
+          </div>
+
+          <h1 class="auth-hero-title" style="font-size: 2.4rem">
+            JOIN THE<br />
+            <span
+              style="
+                color: var(--primary);
+                text-shadow: 0 0 20px rgba(0, 245, 255, 0.5);
+              "
+              >SAFETY</span
+            ><br />
+            NETWORK
+          </h1>
+
+          <p class="auth-hero-subtitle">
+            Register to access the full suite of emergency intelligence tools,
+            real-time location tracking, and instant SOS capabilities.
+          </p>
+
+          <div class="feature-list">
+            <div class="feature-item">
+              <div class="feature-icon">🛡️</div>
+              <div class="feature-text">
+                <span class="feature-title">Secure Account</span>
+                <span class="feature-desc"
+                  >Your data is encrypted & protected</span
+                >
+              </div>
+            </div>
+            <div class="feature-item">
+              <div class="feature-icon">⚡</div>
+              <div class="feature-text">
+                <span class="feature-title">Instant Access</span>
+                <span class="feature-desc">No OTP required — quick setup</span>
+              </div>
+            </div>
+            <div class="feature-item">
+              <div class="feature-icon">🌐</div>
+              <div class="feature-text">
+                <span class="feature-title">Global Coverage</span>
+                <span class="feature-desc"
+                  >Emergency services mapped worldwide</span
+                >
+              </div>
+            </div>
+          </div>
+
+          <div class="stats-row">
+            <div class="stat-item">
+              <span class="stat-value">Free</span>
+              <span class="stat-label">Always</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-value">Live</span>
+              <span class="stat-label">Tracking</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-value">IoT</span>
+              <span class="stat-label">Ready</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: Signup Form -->
+      <div class="auth-right">
+        <div class="auth-form-container" style="max-width: 460px">
+          <div class="auth-form-header">
+            <h2 class="auth-form-title">CREATE <span>ACCOUNT</span></h2>
+            <p class="auth-form-subtitle">
+              Join the Smart Emergency Assistance Platform
+            </p>
+          </div>
+
+          <div class="error-msg" id="signupError">
+            <span>⚠</span> <span id="signupErrorText">Error</span>
+          </div>
+          <div class="success-msg" id="signupSuccess">
+            <span>✓</span> <span>Account created! Redirecting to login...</span>
+          </div>
+
+          <div class="auth-form-card">
+            <form id="signupForm" autocomplete="off">
+              <!-- Full Name -->
+              <div class="form-group">
+                <label class="form-label" for="signupName">Full Name</label>
+                <div style="position: relative">
+                  <span class="input-icon">👤</span>
+                  <input
+                    type="text"
+                    id="signupName"
+                    class="form-input"
+                    placeholder="John Doe"
+                    required
+                    autocomplete="name"
+                  />
+                </div>
+              </div>
+
+              <!-- Email -->
+              <div class="form-group">
+                <label class="form-label" for="signupEmail"
+                  >Email Address</label
+                >
+                <div style="position: relative">
+                  <span class="input-icon">✉</span>
+                  <input
+                    type="email"
+                    id="signupEmail"
+                    class="form-input"
+                    placeholder="john@example.com"
+                    required
+                    autocomplete="email"
+                  />
+                </div>
+              </div>
+
+              <!-- Phone -->
+              <div class="form-group">
+                <label class="form-label" for="signupPhone">Phone Number</label>
+                <div style="position: relative">
+                  <span class="input-icon">📱</span>
+                  <input
+                    type="tel"
+                    id="signupPhone"
+                    class="form-input"
+                    placeholder="+91 98765 43210"
+                    required
+                  />
+                </div>
+              </div>
+
+              <!-- Password -->
+              <div class="form-group">
+                <label class="form-label" for="signupPassword">Password</label>
+                <div class="password-wrapper" style="position: relative">
+                  <span class="input-icon">🔒</span>
+                  <input
+                    type="password"
+                    id="signupPassword"
+                    class="form-input"
+                    placeholder="Min. 6 characters"
+                    required
+                    minlength="6"
+                    autocomplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    class="password-toggle"
+                    id="pwToggleSignup"
+                    title="Toggle password"
+                  >
+                    👁
+                  </button>
+                </div>
+              </div>
+
+              <!-- Confirm Password -->
+              <div class="form-group">
+                <label class="form-label" for="signupConfirm"
+                  >Confirm Password</label
+                >
+                <div class="password-wrapper" style="position: relative">
+                  <span class="input-icon">🔐</span>
+                  <input
+                    type="password"
+                    id="signupConfirm"
+                    class="form-input"
+                    placeholder="Re-enter password"
+                    required
+                    autocomplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    class="password-toggle"
+                    id="pwToggleConfirm"
+                    title="Toggle password"
+                  >
+                    👁
+                  </button>
+                </div>
+              </div>
+
+              <!-- Password Strength Bar -->
+              <div style="margin-bottom: 20px">
+                <div
+                  style="
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 6px;
+                  "
+                >
+                  <span
+                    style="
+                      font-family: var(--font-tech);
+                      font-size: 0.62rem;
+                      color: var(--text-muted);
+                      letter-spacing: 1.5px;
+                    "
+                    >PASSWORD STRENGTH</span
+                  >
+                  <span
+                    id="strengthText"
+                    style="
+                      font-family: var(--font-tech);
+                      font-size: 0.62rem;
+                      color: var(--text-muted);
+                    "
+                    >—</span
+                  >
+                </div>
+                <div
+                  style="
+                    width: 100%;
+                    height: 4px;
+                    background: rgba(255, 255, 255, 0.05);
+                    border-radius: 2px;
+                  "
+                >
+                  <div
+                    id="strengthBar"
+                    style="
+                      height: 100%;
+                      border-radius: 2px;
+                      transition: all 0.3s ease;
+                      width: 0%;
+                      background: var(--danger);
+                    "
+                  ></div>
+                </div>
+              </div>
+
+              <!-- Terms -->
+              <div
+                style="
+                  display: flex;
+                  align-items: flex-start;
+                  gap: 10px;
+                  margin-bottom: 20px;
+                "
+              >
+                <input
+                  type="checkbox"
+                  id="termsCheck"
+                  required
+                  style="
+                    width: 16px;
+                    height: 16px;
+                    accent-color: var(--primary);
+                    margin-top: 3px;
+                    flex-shrink: 0;
+                    cursor: pointer;
+                  "
+                />
+                <label
+                  for="termsCheck"
+                  style="
+                    font-family: var(--font-body);
+                    font-size: 0.82rem;
+                    color: var(--text-secondary);
+                    cursor: pointer;
+                    line-height: 1.4;
+                  "
+                >
+                  I agree to the
+                  <a
+                    href="#"
+                    style="color: var(--primary); text-decoration: none"
+                    >Terms of Service</a
+                  >
+                  and understand this platform is for emergency use.
+                </label>
+              </div>
+
+              <!-- Submit -->
+              <button
+                type="submit"
+                class="btn-primary auth-btn-full"
+                id="signupBtn"
+              >
+                <span id="signupBtnText">CREATE ACCOUNT</span>
+                <span id="signupSpinner" class="spinner hidden"></span>
+              </button>
+            </form>
+          </div>
+
+          <div class="auth-footer-link" style="margin-top: 24px">
+            Already have an account? <a href="index.html">Sign in →</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="js/particles.js"></script>
+    <script src="js/auth.js"></script>
+    <script>
+      // Password toggle functions
+      function makeToggle(inputId, btnId) {
+        document.getElementById(btnId).addEventListener("click", () => {
+          const pw = document.getElementById(inputId);
+          const btn = document.getElementById(btnId);
+          pw.type = pw.type === "password" ? "text" : "password";
+          btn.textContent = pw.type === "password" ? "👁" : "🙈";
+        });
+      }
+      makeToggle("signupPassword", "pwToggleSignup");
+      makeToggle("signupConfirm", "pwToggleConfirm");
+
+      // Password strength checker
+      document
+        .getElementById("signupPassword")
+        .addEventListener("input", function () {
+          const pw = this.value;
+          const bar = document.getElementById("strengthBar");
+          const text = document.getElementById("strengthText");
+          let strength = 0;
+          if (pw.length >= 6) strength++;
+          if (pw.length >= 10) strength++;
+          if (/[A-Z]/.test(pw)) strength++;
+          if (/[0-9]/.test(pw)) strength++;
+          if (/[^A-Za-z0-9]/.test(pw)) strength++;
+          const levels = [
+            { pct: "0%", color: "var(--danger)", label: "—" },
+            { pct: "25%", color: "var(--danger)", label: "WEAK" },
+            { pct: "50%", color: "var(--warning)", label: "FAIR" },
+            { pct: "75%", color: "var(--primary)", label: "GOOD" },
+            { pct: "90%", color: "var(--success)", label: "STRONG" },
+            { pct: "100%", color: "var(--success)", label: "VERY STRONG" },
+          ];
+          bar.style.width = levels[strength].pct;
+          bar.style.background = levels[strength].color;
+          bar.style.boxShadow = `0 0 6px ${levels[strength].color}`;
+          text.style.color = levels[strength].color;
+          text.textContent = levels[strength].label;
+        });
+
+      // Signup form
+      document
+        .getElementById("signupForm")
+        .addEventListener("submit", async e => {
+          e.preventDefault();
+          const name = document.getElementById("signupName").value.trim();
+          const email = document.getElementById("signupEmail").value.trim();
+          const phone = document.getElementById("signupPhone").value.trim();
+          const password = document.getElementById("signupPassword").value;
+          const confirm = document.getElementById("signupConfirm").value;
+          const errorEl = document.getElementById("signupError");
+          const successEl = document.getElementById("signupSuccess");
+          const btn = document.getElementById("signupBtn");
+          const btnText = document.getElementById("signupBtnText");
+          const spinner = document.getElementById("signupSpinner");
+
+          errorEl.classList.remove("show");
+          successEl.classList.remove("show");
+
+          if (password !== confirm) {
+            document.getElementById("signupErrorText").textContent =
+              "Passwords do not match";
+            errorEl.classList.add("show");
+            showToast("Passwords do not match", "error");
+            return;
+          }
+
+          btn.disabled = true;
+          btnText.textContent = "CREATING ACCOUNT...";
+          spinner.classList.remove("hidden");
+
+          try {
+            const res = await fetch("/api/auth/signup", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name, email, phone, password }),
+            });
+            const data = await res.json();
+
+            if (data.success) {
+              successEl.classList.add("show");
+              btnText.textContent = "ACCOUNT CREATED ✓";
+              showToast("Account created successfully!", "success");
+              setTimeout(() => {
+                window.location.href = "index.html";
+              }, 1800);
+            } else {
+              throw new Error(data.message || "Registration failed");
+            }
+          } catch (err) {
+            document.getElementById("signupErrorText").textContent =
+              err.message;
+            errorEl.classList.add("show");
+            btn.disabled = false;
+            btnText.textContent = "CREATE ACCOUNT";
+            spinner.classList.add("hidden");
+            showToast(err.message, "error");
+          }
+        });
+    </script>
+  </body>
+</html>

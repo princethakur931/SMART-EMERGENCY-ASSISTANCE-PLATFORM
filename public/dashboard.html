@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SEAP — Emergency Dashboard</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🆘</text></svg>"
+    />
+    <link rel="stylesheet" href="css/global.css" />
+    <link rel="stylesheet" href="css/dashboard.css" />
+  </head>
+  <body>
+    <!-- Scanlines & Grid -->
+    <div class="grid-bg"></div>
+    <div class="scanlines"></div>
+    <div class="corner-decor top-left"></div>
+    <div class="corner-decor top-right"></div>
+    <div class="corner-decor bottom-left"></div>
+    <div class="corner-decor bottom-right"></div>
+
+    <!-- Toast Notifications -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- SOS Alert Banner -->
+    <div class="alert-banner" id="sosBanner">
+      <span style="animation: blink 0.5s ease-in-out infinite">🚨</span>
+      <span>SOS ALERT TRANSMITTED — EMERGENCY SERVICES NOTIFIED</span>
+      <span style="animation: blink 0.5s ease-in-out infinite">🚨</span>
+      <button
+        onclick="
+          document.getElementById('sosBanner').style.display = 'none';
+          stopSosAlarm();
+        "
+        style="
+          background: none;
+          border: none;
+          color: white;
+          cursor: pointer;
+          margin-left: 20px;
+          font-size: 1rem;
+        "
+      >
+        ✕
+      </button>
+    </div>
+
+    <!-- ═══ TOP NAVIGATION BAR ══════════════════════════════════ -->
+    <nav class="topbar">
+      <div class="topbar-left">
+        <!-- Logo -->
+        <a href="#" class="topbar-logo">
+          <div class="topbar-logo-icon">🆘</div>
+          <div>
+            <div class="topbar-title">S.E.A.P</div>
+            <div class="topbar-subtitle">Emergency Platform</div>
+          </div>
+        </a>
+
+        <!-- Breadcrumb -->
+        <div class="topbar-breadcrumb">
+          <span class="breadcrumb-item">SYSTEM</span>
+          <span class="breadcrumb-sep">›</span>
+          <span class="breadcrumb-item active">LIVE DASHBOARD</span>
+        </div>
+      </div>
+
+      <!-- System Status -->
+      <div class="system-status">
+        <div class="status-indicator">
+          <div class="indicator-dot"></div>
+          <span>IoT Online</span>
+        </div>
+        <div class="status-indicator">
+          <div class="indicator-dot"></div>
+          <span>GPS Signal</span>
+        </div>
+        <div class="status-indicator" id="networkStatus">
+          <div class="indicator-dot"></div>
+          <span>Network</span>
+        </div>
+      </div>
+
+      <!-- Clock & User -->
+      <div class="topbar-right">
+        <div class="topbar-clock" id="topbarClock">00:00:00</div>
+
+        <div class="user-menu" id="userMenuBtn">
+          <div class="user-avatar" id="userAvatarInitials">?</div>
+          <span class="user-name" id="userMenuName">Loading...</span>
+          <span style="color: var(--text-muted); font-size: 0.75rem">▾</span>
+
+          <div class="user-dropdown">
+            <div class="dropdown-item">
+              <span>👤</span> <span id="dropdownUserName">Profile</span>
+            </div>
+            <div class="dropdown-item">
+              <span>⚙</span> <span>Settings</span>
+            </div>
+            <div class="dropdown-divider"></div>
+            <button class="dropdown-item logout" id="logoutBtn">
+              <span>🔓</span> <span>Logout</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <!-- ═══ MAIN DASHBOARD CONTENT ══════════════════════════════ -->
+    <div class="dashboard-content">
+      <!-- ═══ LEFT SIDEBAR ══════════════════════════════════════ -->
+      <aside class="sidebar-left">
+        <!-- IoT Device Status -->
+        <div class="iot-card">
+          <div class="iot-card-header">
+            <h3 class="section-title">
+              <span class="title-icon">📡</span> IoT Device
+            </h3>
+            <div class="status-badge online" id="iotStatusBadge">
+              <div class="dot"></div>
+              ACTIVE
+            </div>
+          </div>
+
+          <!-- Device ID -->
+          <div
+            style="
+              margin-bottom: 14px;
+              padding: 10px 14px;
+              background: rgba(0, 0, 0, 0.4);
+              border-radius: 10px;
+              border: 1px solid rgba(0, 245, 255, 0.1);
+            "
+          >
+            <div
+              style="
+                font-family: var(--font-tech);
+                font-size: 0.58rem;
+                color: var(--text-muted);
+                letter-spacing: 2px;
+                text-transform: uppercase;
+                margin-bottom: 4px;
+              "
+            >
+              Device ID
+            </div>
+            <div
+              style="
+                font-family: &quot;Courier New&quot;, monospace;
+                font-size: 0.8rem;
+                color: var(--primary);
+                letter-spacing: 1px;
+              "
+              id="deviceId"
+            >
+              IOT-EMERGENCY-001
+            </div>
+          </div>
+
+          <!-- Live Coordinates -->
+          <div class="coords-display">
+            <div class="coord-row">
+              <span class="coord-label">LAT</span>
+              <span class="coord-value" id="coordLat">28.613900°N</span>
+            </div>
+            <div class="coord-row">
+              <span class="coord-label">LNG</span>
+              <span class="coord-value" id="coordLng">77.209000°E</span>
+            </div>
+            <div
+              class="coord-row"
+              style="
+                margin-top: 8px;
+                padding-top: 8px;
+                border-top: 1px solid rgba(0, 245, 255, 0.1);
+              "
+            >
+              <span class="coord-label">UPDATED</span>
+              <span
+                style="font-size: 0.7rem; color: var(--text-muted)"
+                id="lastUpdateTime"
+                >—</span
+              >
+            </div>
+          </div>
+
+          <!-- Device Stats -->
+          <div class="device-stats">
+            <div class="device-stat">
+              <span class="device-stat-value" id="deviceSpeed">0</span>
+              <span class="device-stat-label">km/h</span>
+            </div>
+            <div class="device-stat">
+              <span class="device-stat-value" id="deviceSignal">Strong</span>
+              <span class="device-stat-label">Signal</span>
+            </div>
+          </div>
+
+          <!-- Battery -->
+          <div style="margin-top: 12px">
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 6px;
+              "
+            >
+              <span
+                style="
+                  font-family: var(--font-tech);
+                  font-size: 0.6rem;
+                  color: var(--text-muted);
+                  letter-spacing: 1.5px;
+                  text-transform: uppercase;
+                "
+                >Battery</span
+              >
+              <span
+                style="
+                  font-family: var(--font-tech);
+                  font-size: 0.75rem;
+                  color: var(--success);
+                "
+                id="batteryPct"
+                >87%</span
+              >
+            </div>
+            <div class="battery-bar">
+              <div
+                class="battery-fill"
+                id="batteryBar"
+                style="width: 87%"
+              ></div>
+            </div>
+          </div>
+
+          <div class="last-update">
+            Last update: <span id="updateTimeAgo">just now</span>
+          </div>
+        </div>
+
+        <!-- SOS Section -->
+        <div class="sos-section">
+          <h3
+            class="section-title"
+            style="justify-content: center; margin-bottom: 16px"
+          >
+            <span>🆘</span> EMERGENCY SOS
+          </h3>
+
+          <div class="sos-btn-container">
+            <div class="sos-ripple"></div>
+            <div class="sos-ripple"></div>
+            <div class="sos-ripple"></div>
+            <button class="btn-sos" id="sosBtn">
+              <span class="sos-icon">🆘</span>
+              <span class="sos-text">SOS</span>
+            </button>
+          </div>
+          <p class="sos-label">Press & hold for emergency alert</p>
+        </div>
+
+        <!-- Quick Emergency Contacts -->
+        <div class="iot-card">
+          <div class="iot-card-header">
+            <h3 class="section-title">
+              <span class="title-icon">📞</span> Quick Dial
+            </h3>
+          </div>
+          <div class="quick-contacts">
+            <a href="tel:100" class="quick-contact-btn police">
+              <span class="contact-icon">🚔</span>
+              <div class="contact-info">
+                <span class="contact-name">Police</span>
+                <span class="contact-number">100</span>
+              </div>
+            </a>
+            <a href="tel:102" class="quick-contact-btn ambulance">
+              <span class="contact-icon">🚑</span>
+              <div class="contact-info">
+                <span class="contact-name">Ambulance</span>
+                <span class="contact-number">102</span>
+              </div>
+            </a>
+            <a href="tel:101" class="quick-contact-btn fire">
+              <span class="contact-icon">🚒</span>
+              <div class="contact-info">
+                <span class="contact-name">Fire Dept</span>
+                <span class="contact-number">101</span>
+              </div>
+            </a>
+            <a href="tel:1091" class="quick-contact-btn women">
+              <span class="contact-icon">🆘</span>
+              <div class="contact-info">
+                <span class="contact-name">Women Help</span>
+                <span class="contact-number">1091</span>
+              </div>
+            </a>
+          </div>
+        </div>
+      </aside>
+
+      <!-- ═══ MAP CENTER PANEL ══════════════════════════════════ -->
+      <main class="map-section">
+        <!-- Map Toolbar -->
+        <div class="map-toolbar">
+          <div class="map-toolbar-left">
+            <span class="map-title">📍 LIVE TRACKING MAP</span>
+            <div class="map-filter-btns">
+              <button
+                class="filter-btn active"
+                data-filter="all"
+                id="filterAll"
+              >
+                ALL
+              </button>
+              <button
+                class="filter-btn hospital"
+                data-filter="hospital"
+                id="filterHospital"
+              >
+                🏥 HOSPITALS
+              </button>
+              <button
+                class="filter-btn police"
+                data-filter="police"
+                id="filterPolice"
+              >
+                🚔 POLICE
+              </button>
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center">
+            <button
+              class="filter-btn"
+              id="btnRefreshMap"
+              title="Refresh nearby services"
+            >
+              ↻ REFRESH
+            </button>
+            <button
+              class="filter-btn"
+              id="btnCenterMap"
+              title="Center on device"
+            >
+              ⊕ CENTER
+            </button>
+            <button class="filter-btn" id="btnFullscreen" title="Fullscreen">
+              ⛶
+            </button>
+          </div>
+        </div>
+
+        <!-- Map Container -->
+        <div
+          style="
+            position: relative;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+          "
+        >
+          <div id="map"></div>
+
+          <!-- Live Badge -->
+          <div class="live-badge">
+            <div
+              class="indicator-dot"
+              style="
+                background: var(--success);
+                box-shadow: 0 0 8px var(--success);
+                width: 7px;
+                height: 7px;
+                border-radius: 50%;
+                animation: blink 1.5s ease-in-out infinite;
+              "
+            ></div>
+            LIVE TRACKING
+          </div>
+
+          <!-- Loading Overlay for Map -->
+          <div
+            id="mapLoadingOverlay"
+            style="
+              position: absolute;
+              top: 0;
+              left: 0;
+              right: 0;
+              bottom: 0;
+              background: rgba(2, 5, 16, 0.85);
+              backdrop-filter: blur(5px);
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              z-index: 500;
+              transition: opacity 0.5s ease;
+            "
+          >
+            <div
+              style="
+                font-size: 2.5rem;
+                margin-bottom: 20px;
+                animation: orbFloat 2s ease-in-out infinite;
+              "
+            >
+              📡
+            </div>
+            <div
+              style="
+                font-family: var(--font-tech);
+                font-size: 0.8rem;
+                color: var(--primary);
+                letter-spacing: 3px;
+                margin-bottom: 16px;
+              "
+            >
+              INITIALIZING MAP
+            </div>
+            <div
+              class="spinner"
+              style="width: 32px; height: 32px; border-width: 3px"
+            ></div>
+          </div>
+        </div>
+
+        <!-- Map Stats Bar -->
+        <div class="map-stats-bar">
+          <div class="map-stat">
+            <span class="map-stat-icon">🏥</span>
+            <span>Hospitals: </span>
+            <span class="map-stat-value" id="hospitalCount">—</span>
+          </div>
+          <div class="map-stat">
+            <span class="map-stat-icon">🚔</span>
+            <span>Police Stations: </span>
+            <span class="map-stat-value" id="policeCount">—</span>
+          </div>
+          <div class="map-stat">
+            <span class="map-stat-icon">📍</span>
+            <span>Search Radius: </span>
+            <span class="map-stat-value">5 km</span>
+          </div>
+          <div class="map-stat" style="margin-left: auto">
+            <span class="map-stat-icon">🌐</span>
+            <span>Zoom: </span>
+            <span class="map-stat-value" id="mapZoomLevel">15</span>
+          </div>
+        </div>
+      </main>
+
+      <!-- ═══ RIGHT SIDEBAR ═════════════════════════════════════ -->
+      <aside class="sidebar-right">
+        <!-- Tabs -->
+        <div class="sidebar-tabs">
+          <button class="sidebar-tab active" data-tab="hospitals">
+            🏥 Hospitals
+          </button>
+          <button class="sidebar-tab" data-tab="police">🚔 Police</button>
+        </div>
+
+        <!-- Hospital Tab -->
+        <div class="tab-panel active" id="tab-hospitals">
+          <div class="nearby-section-header">
+            <h3 class="section-title"><span>🏥</span> Nearby Hospitals</h3>
+            <span class="nearby-count" id="hospitalCountBadge">0</span>
+          </div>
+
+          <div id="hospitalsList">
+            <div class="facilities-loading">
+              <div class="spinner"></div>
+              <div>SCANNING FOR HOSPITALS...</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Police Tab -->
+        <div class="tab-panel" id="tab-police">
+          <div class="nearby-section-header">
+            <h3 class="section-title"><span>🚔</span> Nearby Police</h3>
+            <span class="nearby-count" id="policeCountBadge">0</span>
+          </div>
+
+          <div id="policeList">
+            <div class="facilities-loading">
+              <div class="spinner"></div>
+              <div>SCANNING FOR POLICE STATIONS...</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Divider -->
+        <div
+          style="height: 1px; background: var(--border-primary); margin: 4px 0"
+        ></div>
+
+        <!-- SOS Log -->
+        <div>
+          <h3 class="section-title" style="margin-bottom: 12px">
+            <span>📋</span> Alert Log
+          </h3>
+          <div
+            id="sosLogList"
+            style="display: flex; flex-direction: column; gap: 8px"
+          >
+            <div
+              style="
+                text-align: center;
+                padding: 20px;
+                color: var(--text-muted);
+                font-family: var(--font-tech);
+                font-size: 0.65rem;
+                letter-spacing: 1.5px;
+              "
+            >
+              NO ALERTS YET
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <script src="js/particles.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/dashboard.js"></script>
+    <!-- Google Maps API: key is loaded securely from server via /api/config -->
+    <script>
+      fetch("/api/config")
+        .then(res => res.json())
+        .then(config => {
+          const script = document.createElement("script");
+          script.src =
+            "https://maps.googleapis.com/maps/api/js?key=" +
+            config.googleMapsApiKey +
+            "&libraries=places&callback=initMap";
+          script.async = true;
+          script.defer = true;
+          document.body.appendChild(script);
+        })
+        .catch(err => console.error("Failed to load map config:", err));
+    </script>
+  </body>
+</html>
