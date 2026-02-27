@@ -4,10 +4,11 @@
 
 /* ─── Dashboard Layout ───────────────────────────────────────── */
 .dashboard-page {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   position: relative;
+  overflow: hidden;
 }
 
 /* ─── Top Navigation Bar ─────────────────────────────────────── */
@@ -257,11 +258,12 @@
   margin-top: 64px;
   display: grid;
   grid-template-columns: 340px 1fr 300px;
-  grid-template-rows: auto 1fr;
-  min-height: calc(100vh - 64px);
+  grid-template-rows: 1fr;
+  height: calc(100vh - 64px);
   gap: 0;
   position: relative;
   z-index: 10;
+  overflow: hidden;
 }
 
 /* ─── Left Sidebar ───────────────────────────────────────────── */
@@ -269,10 +271,25 @@
   background: rgba(4, 10, 28, 0.95);
   border-right: 1px solid var(--border-primary);
   padding: 20px;
+  height: 100%;
+  box-sizing: border-box;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-primary) transparent;
+}
+.sidebar-left::-webkit-scrollbar {
+  width: 4px;
+}
+.sidebar-left::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar-left::-webkit-scrollbar-thumb {
+  background: var(--border-primary);
+  border-radius: 2px;
 }
 
 /* IoT Device Card */
@@ -283,6 +300,7 @@
   padding: 20px;
   position: relative;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .iot-card::before {
@@ -454,6 +472,7 @@
   border-radius: var(--radius-lg);
   position: relative;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .sos-btn-container {
@@ -627,6 +646,8 @@
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border-primary);
+  height: 100%;
+  overflow: hidden;
 }
 
 .map-toolbar {
@@ -697,7 +718,7 @@
 /* Map Container */
 #map {
   flex: 1;
-  min-height: 500px;
+  min-height: 0;
   z-index: 10;
   position: relative;
 }
@@ -767,10 +788,25 @@
 .sidebar-right {
   background: rgba(4, 10, 28, 0.95);
   padding: 20px;
+  height: 100%;
+  box-sizing: border-box;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-primary) transparent;
+}
+.sidebar-right::-webkit-scrollbar {
+  width: 4px;
+}
+.sidebar-right::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar-right::-webkit-scrollbar-thumb {
+  background: var(--border-primary);
+  border-radius: 2px;
 }
 
 /* Nearby Services */
@@ -1082,3 +1118,580 @@
     padding: 8px 12px;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   SETTINGS MODAL
+   ═══════════════════════════════════════════════════════════════ */
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+.settings-overlay.open {
+  opacity: 1;
+  pointer-events: all;
+}
+
+.settings-modal {
+  width: min(520px, 94vw);
+  max-height: 85vh;
+  background: var(--bg-card);
+  border: 1px solid var(--border-primary);
+  border-radius: 20px;
+  box-shadow: var(--shadow-card), 0 0 40px rgba(0,245,255,0.08);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transform: translateY(20px) scale(0.97);
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.settings-overlay.open .settings-modal {
+  transform: translateY(0) scale(1);
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--border-primary);
+  background: rgba(0, 245, 255, 0.04);
+  flex-shrink: 0;
+}
+.settings-title {
+  font-family: var(--font-tech);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--primary);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  text-shadow: 0 0 10px rgba(0,245,255,0.3);
+}
+.settings-close {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  color: var(--text-muted);
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition);
+}
+.settings-close:hover {
+  background: rgba(255, 34, 68, 0.15);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.settings-body {
+  overflow-y: auto;
+  padding: 8px 0 16px;
+}
+
+.settings-section {
+  padding: 14px 22px;
+}
+.settings-section + .settings-section {
+  border-top: 1px solid var(--border-primary);
+}
+
+.settings-section-label {
+  font-family: var(--font-tech);
+  font-size: 0.6rem;
+  letter-spacing: 2.5px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-bottom: 14px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+}
+.settings-row + .settings-row {
+  border-top: 1px solid rgba(0,245,255,0.06);
+}
+
+.settings-row-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+.settings-row-icon {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+.settings-row-title {
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.settings-row-desc {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* ─── Theme Toggle Group ───── */
+.theme-toggle-group {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.theme-btn {
+  padding: 7px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-primary);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+.theme-btn:hover {
+  background: var(--bg-glass-hover);
+  color: var(--text-primary);
+}
+.theme-btn.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #02050f;
+  box-shadow: 0 0 12px rgba(0,245,255,0.35);
+}
+
+/* ─── Toggle Switch (ON/OFF) ─ */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+.toggle-track {
+  display: block;
+  width: 44px;
+  height: 24px;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid var(--border-primary);
+  border-radius: 12px;
+  transition: var(--transition);
+  position: relative;
+}
+.toggle-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  background: var(--text-muted);
+  border-radius: 50%;
+  transition: var(--transition);
+}
+.toggle-switch input:checked + .toggle-track {
+  background: rgba(0,245,255,0.2);
+  border-color: var(--primary);
+}
+.toggle-switch input:checked + .toggle-track .toggle-thumb {
+  transform: translateX(20px);
+  background: var(--primary);
+  box-shadow: 0 0 8px rgba(0,245,255,0.5);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   LIGHT MODE – PROFESSIONAL DASHBOARD OVERRIDES
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Body & page chrome ── */
+body.light-mode {
+  background: var(--bg-deep);
+}
+
+/* ── Topbar ── */
+body.light-mode .topbar {
+  background: rgba(255, 255, 255, 0.96);
+  border-bottom-color: rgba(37,99,235,0.12);
+  box-shadow: 0 1px 0 rgba(37,99,235,0.1), 0 4px 16px rgba(15,23,42,0.06);
+}
+body.light-mode .topbar-title {
+  text-shadow: none;
+  color: var(--primary);
+}
+body.light-mode .topbar-clock {
+  text-shadow: none;
+  color: var(--primary);
+}
+body.light-mode .topbar-logo-icon {
+  box-shadow: 0 2px 10px rgba(37,99,235,0.25);
+}
+body.light-mode .topbar-breadcrumb {
+  background: rgba(37,99,235,0.06);
+  border-color: rgba(37,99,235,0.12);
+}
+body.light-mode .status-indicator {
+  background: rgba(37,99,235,0.05);
+  border-color: rgba(37,99,235,0.12);
+}
+
+/* ── User menu & dropdown ── */
+body.light-mode .user-menu {
+  background: rgba(37,99,235,0.06);
+  border-color: rgba(37,99,235,0.14);
+}
+body.light-mode .user-menu:hover {
+  background: rgba(37,99,235,0.1);
+  border-color: var(--primary);
+}
+body.light-mode .user-name { color: var(--text-primary); }
+body.light-mode .user-dropdown {
+  background: #ffffff;
+  border-color: rgba(37,99,235,0.14);
+  box-shadow: 0 8px 32px rgba(15,23,42,0.12), 0 2px 8px rgba(15,23,42,0.06);
+}
+body.light-mode .dropdown-item {
+  color: var(--text-secondary);
+}
+body.light-mode .dropdown-item:hover {
+  background: rgba(37,99,235,0.07);
+  color: var(--primary);
+}
+body.light-mode .dropdown-divider {
+  background: rgba(37,99,235,0.1);
+}
+
+/* ── Left sidebar ── */
+body.light-mode .sidebar-left {
+  background: #ffffff;
+  border-right-color: rgba(37,99,235,0.1);
+}
+body.light-mode .sidebar-left::-webkit-scrollbar-thumb {
+  background: rgba(37,99,235,0.2);
+}
+
+/* ── Device ID box (base) ── */
+.device-id-box {
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 10px;
+  border: 1px solid rgba(0, 245, 255, 0.1);
+}
+.device-id-label {
+  font-family: var(--font-tech);
+  font-size: 0.58rem;
+  color: var(--text-muted);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.device-id-value {
+  font-family: "Courier New", monospace;
+  font-size: 0.8rem;
+  color: var(--primary);
+  letter-spacing: 1px;
+}
+
+/* ── IoT card & generic cards ── */
+body.light-mode .iot-card {
+  background: #ffffff;
+  border-color: rgba(37,99,235,0.12);
+  box-shadow: var(--shadow-card);
+}
+body.light-mode .iot-card::before {
+  background: linear-gradient(90deg, transparent, var(--primary), transparent);
+  opacity: 0.5;
+}
+body.light-mode .section-title {
+  color: var(--primary);
+  text-shadow: none;
+}
+body.light-mode .device-id-box {
+  background: rgba(37,99,235,0.05);
+  border-color: rgba(37,99,235,0.12);
+}
+body.light-mode .device-id-label { color: var(--text-muted); }
+body.light-mode .device-id-value  { color: var(--primary); }
+
+body.light-mode .coords-display {
+  background: rgba(37,99,235,0.04);
+  border-color: rgba(37,99,235,0.1);
+}
+body.light-mode .coord-label { color: var(--text-muted); }
+body.light-mode .coord-value { color: var(--primary); }
+body.light-mode .device-stat-value { color: var(--text-primary); }
+body.light-mode .device-stat-label { color: var(--text-muted); }
+body.light-mode .last-update { color: var(--text-muted); }
+body.light-mode .battery-bar {
+  background: rgba(37,99,235,0.1);
+}
+body.light-mode .battery-fill {
+  background: linear-gradient(90deg, var(--success), #34d399);
+  box-shadow: none;
+}
+body.light-mode .status-badge.online {
+  background: rgba(5,150,105,0.1);
+  border-color: rgba(5,150,105,0.3);
+  color: #059669;
+}
+
+/* ── SOS section ── */
+body.light-mode .sos-section {
+  background: #ffffff;
+  border-color: rgba(220,38,38,0.12);
+  box-shadow: var(--shadow-card);
+}
+body.light-mode .sos-ripple {
+  border-color: rgba(220,38,38,0.2);
+}
+
+/* ── Quick contacts ── */
+body.light-mode .quick-contact-btn {
+  background: rgba(37,99,235,0.05);
+  border-color: rgba(37,99,235,0.1);
+}
+body.light-mode .quick-contact-btn:hover {
+  background: rgba(37,99,235,0.1);
+  border-color: var(--primary);
+}
+body.light-mode .contact-name { color: var(--text-primary); }
+body.light-mode .contact-number { color: var(--text-muted); }
+
+/* ── Map toolbar ── */
+body.light-mode .map-toolbar {
+  background: rgba(255,255,255,0.97);
+  border-color: rgba(37,99,235,0.1);
+  box-shadow: 0 1px 0 rgba(37,99,235,0.08);
+}
+body.light-mode .map-title { color: var(--text-primary); }
+body.light-mode .filter-btn {
+  background: rgba(37,99,235,0.05);
+  color: var(--text-secondary);
+  border-color: rgba(37,99,235,0.14);
+}
+body.light-mode .filter-btn:hover {
+  background: rgba(37,99,235,0.1);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+body.light-mode .filter-btn.active {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+  box-shadow: 0 2px 8px rgba(37,99,235,0.3);
+}
+
+/* ── Map stats bar ── */
+body.light-mode .map-stats-bar {
+  background: rgba(255,255,255,0.97);
+  border-top-color: rgba(37,99,235,0.1);
+  box-shadow: none;
+}
+body.light-mode .map-stat { color: var(--text-secondary); }
+body.light-mode .map-stat-value { color: var(--primary); }
+body.light-mode .live-badge {
+  background: rgba(5,150,105,0.1);
+  border-color: rgba(5,150,105,0.25);
+  color: #059669;
+}
+
+/* ── Right sidebar ── */
+body.light-mode .sidebar-right {
+  background: #ffffff;
+  border-left-color: rgba(37,99,235,0.1);
+}
+body.light-mode .sidebar-tabs {
+  background: rgba(37,99,235,0.04);
+  border-bottom-color: rgba(37,99,235,0.1);
+}
+body.light-mode .sidebar-tab {
+  color: var(--text-muted);
+  background: transparent;
+}
+body.light-mode .sidebar-tab.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+  background: rgba(37,99,235,0.05);
+}
+body.light-mode .nearby-section-header { border-bottom-color: rgba(37,99,235,0.08); }
+body.light-mode .nearby-count {
+  background: rgba(37,99,235,0.1);
+  color: var(--primary);
+}
+
+/* ── Facility cards (right sidebar) ── */
+body.light-mode .facility-card {
+  background: #ffffff;
+  border-color: rgba(37,99,235,0.12);
+  box-shadow: 0 1px 6px rgba(15,23,42,0.06);
+}
+body.light-mode .facility-card:hover {
+  background: #f5f8ff;
+  border-color: var(--primary);
+  box-shadow: 0 4px 16px rgba(37,99,235,0.12);
+}
+body.light-mode .facility-card::before {
+  opacity: 0;
+}
+body.light-mode .facility-card:hover::before {
+  opacity: 1;
+}
+body.light-mode .hospital-card .facility-type-icon {
+  background: rgba(234,88,12,0.08);
+  border-color: rgba(234,88,12,0.25);
+}
+body.light-mode .police-card .facility-type-icon {
+  background: rgba(37,99,235,0.08);
+  border-color: rgba(37,99,235,0.22);
+}
+body.light-mode .facility-name { color: var(--text-primary); }
+body.light-mode .facility-distance { color: var(--text-muted); }
+body.light-mode .facility-distance .dist-value { color: var(--primary); }
+
+/* action buttons inside cards */
+body.light-mode .facility-action-btn {
+  background: rgba(37,99,235,0.05);
+  border-color: rgba(37,99,235,0.15);
+  color: var(--text-secondary);
+}
+body.light-mode .facility-action-btn:hover {
+  background: rgba(37,99,235,0.1);
+  color: var(--primary);
+  border-color: var(--primary);
+  box-shadow: none;
+}
+body.light-mode .facility-action-btn.call {
+  background: rgba(5,150,105,0.06);
+  border-color: rgba(5,150,105,0.2);
+  color: #059669;
+}
+body.light-mode .facility-action-btn.call:hover {
+  background: rgba(5,150,105,0.12);
+  border-color: #059669;
+  box-shadow: none;
+}
+body.light-mode .facility-action-btn.navigate {
+  background: rgba(37,99,235,0.06);
+  border-color: rgba(37,99,235,0.2);
+  color: var(--primary);
+}
+body.light-mode .facility-action-btn.navigate:hover {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #ffffff;
+  box-shadow: none;
+}
+
+/* NEAREST badge */
+body.light-mode .nearest-badge,
+body.light-mode [class*="nearest"] {
+  background: rgba(5,150,105,0.1) !important;
+  border-color: rgba(5,150,105,0.25) !important;
+  color: #059669 !important;
+}
+
+/* loading spinner text */
+body.light-mode .facilities-loading { color: var(--text-muted); }
+
+/* ── Alert Log ── */
+body.light-mode .sos-log-item {
+  background: rgba(220,38,38,0.04);
+  border-color: rgba(220,38,38,0.12);
+}
+
+/* ── Toast ── */
+body.light-mode .toast {
+  background: #ffffff;
+  border-color: rgba(37,99,235,0.2);
+  color: var(--text-primary);
+  box-shadow: 0 4px 20px rgba(15,23,42,0.12);
+}
+
+/* ── SOS Banner ── */
+body.light-mode .alert-banner {
+  background: linear-gradient(135deg, #dc2626, #b91c1c);
+}
+
+/* ── Settings modal (light) ── */
+body.light-mode .settings-overlay { background: rgba(15,23,42,0.45); }
+body.light-mode .settings-modal {
+  background: #ffffff;
+  border-color: rgba(37,99,235,0.14);
+  box-shadow: 0 16px 48px rgba(15,23,42,0.16);
+}
+body.light-mode .settings-header {
+  background: rgba(37,99,235,0.04);
+  border-bottom-color: rgba(37,99,235,0.1);
+}
+body.light-mode .settings-title {
+  text-shadow: none;
+  color: var(--primary);
+}
+body.light-mode .settings-close {
+  background: rgba(37,99,235,0.05);
+  border-color: rgba(37,99,235,0.15);
+  color: var(--text-muted);
+}
+body.light-mode .settings-section-label { color: #94a3b8; }
+body.light-mode .settings-section + .settings-section {
+  border-top-color: rgba(37,99,235,0.08);
+}
+body.light-mode .settings-row + .settings-row {
+  border-top-color: rgba(37,99,235,0.06);
+}
+body.light-mode .settings-row-title { color: var(--text-primary); }
+body.light-mode .settings-row-desc { color: var(--text-muted); }
+body.light-mode .theme-btn {
+  border-color: rgba(37,99,235,0.18);
+  color: var(--text-muted);
+  background: rgba(37,99,235,0.04);
+}
+body.light-mode .theme-btn:hover {
+  background: rgba(37,99,235,0.09);
+  color: var(--text-primary);
+}
+body.light-mode .theme-btn.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #ffffff;
+  box-shadow: 0 2px 10px rgba(37,99,235,0.3);
+}
+body.light-mode .toggle-track {
+  background: rgba(37,99,235,0.08);
+  border-color: rgba(37,99,235,0.18);
+}
+body.light-mode .toggle-thumb { background: #94a3b8; }
+body.light-mode .toggle-switch input:checked + .toggle-track {
+  background: rgba(37,99,235,0.15);
+  border-color: var(--primary);
+}
+body.light-mode .toggle-switch input:checked + .toggle-track .toggle-thumb {
+  background: var(--primary);
+  box-shadow: 0 2px 8px rgba(37,99,235,0.35);
+}
+

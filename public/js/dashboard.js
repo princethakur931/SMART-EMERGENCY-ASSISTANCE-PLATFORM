@@ -85,6 +85,98 @@ document.addEventListener("click", () =>
 );
 DOM.logoutBtn.addEventListener("click", logout);
 
+// ─── Google Maps Light Style ─────────────────────────────────
+const LIGHT_MAP_STYLE = [
+  { elementType: "geometry", stylers: [{ color: "#f8faff" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#334155" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#ffffff" }] },
+  {
+    featureType: "administrative",
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#c7d2e8" }],
+  },
+  {
+    featureType: "administrative.locality",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#1e3a5f" }],
+  },
+  {
+    featureType: "poi",
+    elementType: "geometry",
+    stylers: [{ color: "#e8eef8" }],
+  },
+  {
+    featureType: "poi",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#64748b" }],
+  },
+  {
+    featureType: "poi.park",
+    elementType: "geometry",
+    stylers: [{ color: "#cfe8d4" }],
+  },
+  {
+    featureType: "poi.park",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#3a7a50" }],
+  },
+  {
+    featureType: "road",
+    elementType: "geometry",
+    stylers: [{ color: "#ffffff" }],
+  },
+  {
+    featureType: "road",
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#dde4f0" }],
+  },
+  {
+    featureType: "road",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#334155" }],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "geometry",
+    stylers: [{ color: "#fde68a" }],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#fbbf24" }],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#1e3a5f" }],
+  },
+  {
+    featureType: "road.arterial",
+    elementType: "geometry",
+    stylers: [{ color: "#f0f4ff" }],
+  },
+  {
+    featureType: "transit",
+    elementType: "geometry",
+    stylers: [{ color: "#e2e8f5" }],
+  },
+  {
+    featureType: "transit.station",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#64748b" }],
+  },
+  {
+    featureType: "water",
+    elementType: "geometry",
+    stylers: [{ color: "#bfdbfe" }],
+  },
+  {
+    featureType: "water",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#3b6fa0" }],
+  },
+];
+
 // ─── Google Maps Dark Style ───────────────────────────────────
 const DARK_MAP_STYLE = [
   { elementType: "geometry", stylers: [{ color: "#0a0f1e" }] },
@@ -185,10 +277,14 @@ let facilityMarkers = { hospitals: [], police: [] };
 
 // ─── Google Maps Callback ─────────────────────────────────────
 window.initMap = function () {
+  const initTheme = localStorage.getItem("seap_theme") || "dark";
+  const initStyle = initTheme === "light" ? LIGHT_MAP_STYLE : DARK_MAP_STYLE;
+  const initBg    = initTheme === "light" ? "#f8faff" : "#020510";
+
   map = new google.maps.Map(document.getElementById("map"), {
     center: { lat: state.lat, lng: state.lng },
     zoom: 15,
-    styles: DARK_MAP_STYLE,
+    styles: initStyle,
     disableDefaultUI: false,
     zoomControl: true,
     zoomControlOptions: { position: google.maps.ControlPosition.RIGHT_BOTTOM },
@@ -196,8 +292,26 @@ window.initMap = function () {
     streetViewControl: false,
     fullscreenControl: false,
     gestureHandling: "greedy",
-    backgroundColor: "#020510",
+    backgroundColor: initBg,
   });
+
+  // Sync InfoWindow style to initial theme
+  const iwStyle = document.getElementById("seap-iw-style");
+  if (iwStyle && initTheme === "light") {
+    iwStyle.textContent = `
+      .gm-style .gm-style-iw-c {
+        background: #ffffff !important;
+        border: 1px solid rgba(37,99,235,0.2) !important;
+        border-radius: 12px !important;
+        box-shadow: 0 4px 20px rgba(15,23,42,0.12) !important;
+        padding: 0 !important;
+      }
+      .gm-style .gm-style-iw-d { overflow: auto !important; }
+      .gm-style .gm-style-iw-t::after { background: #ffffff !important; box-shadow: none !important; }
+      .gm-style-iw-chr { display: none !important; }
+      .gm-ui-hover-effect { display: none !important; }
+    `;
+  }
 
   infoWindow = new google.maps.InfoWindow();
   placesService = new google.maps.places.PlacesService(map);
@@ -353,17 +467,19 @@ function deviceIconUrl() {
 }
 
 function hospitalIconUrl() {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36">
-    <circle cx="18" cy="18" r="17" fill="#cc5500" stroke="rgba(255,107,53,0.8)" stroke-width="1.5"/>
-    <text x="18" y="22" text-anchor="middle" font-size="15">🏥</text>
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44">
+    <circle cx="22" cy="22" r="20" fill="#cc4400" stroke="rgba(255,140,80,0.9)" stroke-width="2"/>
+    <text x="22" y="20" text-anchor="middle" font-size="9" font-weight="800" fill="rgba(255,200,160,0.9)" font-family="Arial,sans-serif" letter-spacing="1">HOSP</text>
+    <text x="22" y="31" text-anchor="middle" font-size="14" fill="white">🏥</text>
   </svg>`;
   return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg);
 }
 
 function policeIconUrl() {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36">
-    <circle cx="18" cy="18" r="17" fill="#0055cc" stroke="rgba(0,150,255,0.8)" stroke-width="1.5"/>
-    <text x="18" y="22" text-anchor="middle" font-size="15">🚔</text>
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44">
+    <circle cx="22" cy="22" r="20" fill="#0044bb" stroke="rgba(80,160,255,0.9)" stroke-width="2"/>
+    <text x="22" y="20" text-anchor="middle" font-size="9" font-weight="800" fill="rgba(160,200,255,0.9)" font-family="Arial,sans-serif" letter-spacing="1">POLICE</text>
+    <text x="22" y="31" text-anchor="middle" font-size="14" fill="white">🚔</text>
   </svg>`;
   return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg);
 }
@@ -516,7 +632,7 @@ async function fetchIoTLocation() {
 }
 
 // ─── Fetch Nearby Services (Google Places API) ────────────────
-function fetchNearbyServices(lat, lng, radius = 5000) {
+function fetchNearbyServices(lat, lng, radius = 10000) {
   showToast("Scanning nearby emergency services...", "info", 2500);
 
   // Try Google Places API first; fallback to Overpass (OpenStreetMap real data)
@@ -546,7 +662,7 @@ function fetchNearbyServices(lat, lng, radius = 5000) {
             ),
           }))
           .sort((a, b) => a.dist - b.dist)
-          .slice(0, 12);
+          .slice(0, 20);
 
       const hospitals = mapResults(hospitalsResult, "hospital");
       const police = mapResults(policeResult, "police");
@@ -599,11 +715,23 @@ function fetchNearbyServices(lat, lng, radius = 5000) {
       });
     }
 
+    // Search hospitals + clinics together for broader results
     placesService.nearbySearch(
-      { location: { lat, lng }, radius, type: "hospital" },
+      { location: { lat, lng }, radius, keyword: "hospital medical" },
       (results, status) => {
-        hospitalsResult =
-          status === google.maps.places.PlacesServiceStatus.OK ? results : [];
+        if (status === google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
+          hospitalsResult = results;
+        } else {
+          // fallback: plain type search
+          placesService.nearbySearch(
+            { location: { lat, lng }, radius, type: "hospital" },
+            (r2, s2) => {
+              hospitalsResult = s2 === google.maps.places.PlacesServiceStatus.OK ? r2 : [];
+              checkDone();
+            }
+          );
+          return;
+        }
         checkDone();
       },
     );
@@ -621,13 +749,18 @@ function fetchNearbyServices(lat, lng, radius = 5000) {
 }
 
 // ─── Overpass API (OpenStreetMap) — real data, no billing needed ──────────────
-async function fetchOverpassServices(lat, lng, radius = 5000) {
+async function fetchOverpassServices(lat, lng, radius = 10000) {
   const query = `
-    [out:json][timeout:30];
+    [out:json][timeout:45];
     (
       node["amenity"="hospital"](around:${radius},${lat},${lng});
       way["amenity"="hospital"](around:${radius},${lat},${lng});
+      relation["amenity"="hospital"](around:${radius},${lat},${lng});
+      node["healthcare"="hospital"](around:${radius},${lat},${lng});
+      way["healthcare"="hospital"](around:${radius},${lat},${lng});
       node["amenity"="clinic"](around:${radius},${lat},${lng});
+      way["amenity"="clinic"](around:${radius},${lat},${lng});
+      node["healthcare"="clinic"](around:${radius},${lat},${lng});
       node["amenity"="doctors"](around:${radius},${lat},${lng});
       node["amenity"="police"](around:${radius},${lat},${lng});
       way["amenity"="police"](around:${radius},${lat},${lng});
@@ -651,9 +784,18 @@ async function fetchOverpassServices(lat, lng, radius = 5000) {
       const elLat = el.lat ?? el.center?.lat;
       const elLng = el.lon ?? el.center?.lon;
       if (!elLat || !elLng) return;
+      // Determine facility type — check both amenity & healthcare tags
+      const amenityTag = el.tags?.amenity || "";
+      const healthcareTag = el.tags?.healthcare || "";
+      const facilityType = amenityTag || healthcareTag || "";
+
       const item = {
         id: el.id,
-        name: el.tags?.name || el.tags?.["name:en"] || "Unknown Facility",
+        name:
+          el.tags?.name ||
+          el.tags?.["name:en"] ||
+          el.tags?.["official_name"] ||
+          null,
         lat: elLat,
         lng: elLng,
         phone:
@@ -665,28 +807,35 @@ async function fetchOverpassServices(lat, lng, radius = 5000) {
           el.tags?.telephone ||
           null,
         address:
-          el.tags?.["addr:street"] ||
           el.tags?.["addr:full"] ||
+          el.tags?.["addr:street"] ||
           el.tags?.["addr:suburb"] ||
+          el.tags?.["addr:city"] ||
           "",
-        type: el.tags?.amenity,
+        type: facilityType,
         dist: getDistanceKm(lat, lng, elLat, elLng),
       };
+      // Skip entries with no name (unimportant unnamed nodes)
+      if (!item.name) return;
       if (
-        item.type === "hospital" ||
-        item.type === "clinic" ||
-        item.type === "doctors"
+        facilityType === "hospital" ||
+        facilityType === "clinic" ||
+        facilityType === "doctors"
       ) {
         hospitals.push(item);
-      } else if (item.type === "police") {
+      } else if (facilityType === "police") {
         police.push(item);
       }
     });
 
     hospitals.sort((a, b) => a.dist - b.dist);
     police.sort((a, b) => a.dist - b.dist);
-    state.hospitals = hospitals.slice(0, 12);
-    state.policeStations = police.slice(0, 12);
+    // Filter out entries with no useful name, keep proper facilities
+    const knownHospitals = hospitals.filter(h => h.name && h.name !== "Unknown Facility");
+    const knownPolice = police.filter(p => p.name && p.name !== "Unknown Facility");
+    // If we have named ones, prefer them; otherwise use all
+    state.hospitals = (knownHospitals.length > 0 ? knownHospitals : hospitals).slice(0, 20);
+    state.policeStations = (knownPolice.length > 0 ? knownPolice : police).slice(0, 20);
     applyFacilityResults();
   } catch (err) {
     console.warn("Overpass error:", err.message);
@@ -696,14 +845,7 @@ async function fetchOverpassServices(lat, lng, radius = 5000) {
 }
 
 async function applyFacilityResults() {
-  // ── Enrich with real road distances (OSRM Table API) ──
-  const allFacilities = [...state.hospitals, ...state.policeStations];
-  await enrichWithRoadDistances(allFacilities, state.lat, state.lng);
-
-  // Re-sort by road distance after enrichment
-  state.hospitals.sort((a, b) => a.dist - b.dist);
-  state.policeStations.sort((a, b) => a.dist - b.dist);
-
+  // Render immediately with Haversine distances so UI is not blocked
   renderFacilityCards();
   renderFacilityMarkers();
   DOM.hospitalCount.textContent = state.hospitals.length;
@@ -714,6 +856,9 @@ async function applyFacilityResults() {
     `Found ${state.hospitals.length} hospitals, ${state.policeStations.length} police stations`,
     "success",
   );
+
+  // Then enrich with real road distances progressively in the background
+  enrichWithRoadDistances([...state.hospitals, ...state.policeStations], state.lat, state.lng);
 }
 
 // ─── Phone button HTML helper ───────────────────────────────
@@ -744,35 +889,56 @@ function formatDuration(secs) {
   return `${Math.floor(secs / 3600)}h ${Math.round((secs % 3600) / 60)}m`;
 }
 
-// ─── Enrich facilities with real road distances via OSRM Table API ───────────
+// ─── Enrich facilities with real road distances via OSRM Route API ───────────
+// Runs sequentially in the background — updates each card live as data arrives
 async function enrichWithRoadDistances(facilities, originLat, originLng) {
   if (!facilities || facilities.length === 0) return;
-  try {
-    const coords =
-      `${originLng},${originLat};` +
-      facilities.map(f => `${f.lng},${f.lat}`).join(";");
-    const url =
-      `https://router.project-osrm.org/table/v1/driving/${coords}` +
-      `?sources=0&annotations=distance,duration`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error("OSRM Table unavailable");
-    const data = await res.json();
-    if (
-      data.code === "Ok" &&
-      data.distances &&
-      data.distances[0] &&
-      data.durations &&
-      data.durations[0]
-    ) {
-      facilities.forEach((f, i) => {
-        const distM = data.distances[0][i + 1]; // index 0 is the origin itself
-        const durS = data.durations[0][i + 1];
-        if (distM != null && distM > 0) f.dist = distM / 1000; // metres → km
+
+  for (const f of facilities) {
+    try {
+      const url =
+        `https://router.project-osrm.org/route/v1/driving/` +
+        `${originLng},${originLat};${f.lng},${f.lat}` +
+        `?overview=false`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (data.code === "Ok" && data.routes?.[0]) {
+        const distM = data.routes[0].distance;
+        const durS  = data.routes[0].duration;
+        if (distM != null && distM > 10) {
+          f.dist = distM / 1000; // metres → km
+          // Live-update the card distance shown in the sidebar
+          updateCardDistDOM(f);
+        }
         if (durS != null && durS > 0) f.duration = durS;
-      });
+      }
+    } catch (err) {
+      // silently keep Haversine fallback for this facility
     }
-  } catch (err) {
-    console.warn("Road distance enrichment failed (using straight-line):", err.message);
+    // Small delay between requests to avoid rate-limiting
+    await new Promise(r => setTimeout(r, 120));
+  }
+}
+
+// Update just the distance text in an already-rendered facility card
+function updateCardDistDOM(f) {
+  const card = document.querySelector(`.facility-card[data-id="${f.id}"]`);
+  if (!card) return;
+  const distEl = card.querySelector(".dist-value");
+  if (distEl) distEl.textContent = `${f.dist.toFixed(2)} km`;
+  // Update duration tag if present
+  if (f.duration) {
+    const existing = card.querySelector(".dist-duration");
+    if (existing) {
+      existing.textContent = `\u00b7 ${formatDuration(f.duration)}`;
+    } else {
+      const span = document.createElement("span");
+      span.className = "dist-duration";
+      span.style.cssText = "color:var(--text-muted);font-size:0.68rem;";
+      span.textContent = `\u00b7 ${formatDuration(f.duration)}`;
+      distEl.insertAdjacentElement("afterend", span);
+    }
   }
 }
 
@@ -800,7 +966,12 @@ function renderList(container, items, type, icon, color) {
 
   container.innerHTML = items
     .map(
-      (f, idx) => `
+      (f, idx) => {
+        const isLight = document.body.classList.contains("light-mode");
+        const nearBg  = isLight ? "rgba(5,150,105,0.1)"  : "rgba(0,255,136,0.15)";
+        const nearBdr = isLight ? "rgba(5,150,105,0.3)"  : "rgba(0,255,136,0.4)";
+        const nearClr = isLight ? "#059669" : "var(--success)";
+        return `
     <div class="facility-card ${type}-card" data-id="${f.id}" data-lat="${f.lat}" data-lng="${f.lng}">
       <div class="facility-card-top">
         <div class="facility-type-icon">${icon}</div>
@@ -811,7 +982,7 @@ function renderList(container, items, type, icon, color) {
             <span class="dist-value">${f.dist.toFixed(2)} km</span>
             ${f.duration ? `<span style="color:var(--text-muted);font-size:0.68rem;">&nbsp;· ${formatDuration(f.duration)}</span>` : ""}
             away
-            ${idx === 0 ? '<span style="margin-left:6px;padding:1px 8px;background:rgba(0,255,136,0.15);border:1px solid rgba(0,255,136,0.4);border-radius:10px;font-size:0.58rem;color:var(--success);">NEAREST</span>' : ""}
+            ${idx === 0 ? `<span style="margin-left:6px;padding:1px 8px;background:${nearBg};border:1px solid ${nearBdr};border-radius:10px;font-size:0.58rem;color:${nearClr};">NEAREST</span>` : ""}
           </div>
           ${f.address ? `<div style="font-size:0.7rem;color:var(--text-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">📌 ${f.address}</div>` : ""}
         </div>
@@ -823,7 +994,8 @@ function renderList(container, items, type, icon, color) {
         </button>
       </div>
     </div>
-  `,
+  `;
+      },
     )
     .join("");
 
@@ -950,6 +1122,7 @@ async function updateLiveNavPanel() {
 // ─── Nav HUD Panel ────────────────────────────────────────────
 function showNavHUD(name, dist, time, eta) {
   clearNavHUD();
+  const isLight = document.body.classList.contains("light-mode");
   const mapEl = document.getElementById("map");
   mapEl.style.position = "relative";
 
@@ -977,6 +1150,24 @@ function showNavHUD(name, dist, time, eta) {
       <button id="navHUD-cancel">✖ END</button>
     </div>`;
 
+  // ── theme tokens ──
+  const hudBg      = isLight ? "rgba(255,255,255,0.97)" : "rgba(5,13,30,0.97)";
+  const hudBdr     = isLight ? "rgba(37,99,235,0.3)"    : "rgba(0,255,136,0.4)";
+  const hudShadow  = isLight
+    ? "0 4px 24px rgba(37,99,235,0.15), 0 2px 8px rgba(15,23,42,0.1)"
+    : "0 0 24px rgba(0,255,136,0.25), 0 4px 20px rgba(0,0,0,0.6)";
+  const destClr    = isLight ? "#2563eb"  : "#00ff88";
+  const nameClr    = isLight ? "#0f172a"  : "#e8f4ff";
+  const distClr    = isLight ? "#059669"  : "#00ff88";
+  const timeClr    = isLight ? "#2563eb"  : "#00cfff";
+  const etaClr     = isLight ? "#d97706"  : "#ffaa00";
+  const labelClr   = isLight ? "#94a3b8"  : "#556";
+  const dividerClr = isLight ? "rgba(37,99,235,0.15)"  : "rgba(0,255,136,0.2)";
+  const cancelBg   = isLight ? "rgba(220,38,38,0.07)"  : "rgba(255,68,102,0.12)";
+  const cancelClr  = isLight ? "#dc2626"  : "#ff4466";
+  const cancelBdr  = isLight ? "rgba(220,38,38,0.25)"  : "rgba(255,68,102,0.4)";
+  const cancelHov  = isLight ? "rgba(220,38,38,0.14)"  : "rgba(255,68,102,0.25)";
+
   const style = document.createElement("style");
   style.id = "navHUD-style";
   style.textContent = `
@@ -994,11 +1185,11 @@ function showNavHUD(name, dist, time, eta) {
       display: flex;
       align-items: center;
       gap: 14px;
-      background: rgba(5,13,30,0.97);
-      border: 1px solid rgba(0,255,136,0.4);
+      background: ${hudBg};
+      border: 1px solid ${hudBdr};
       border-radius: 16px;
       padding: 12px 18px;
-      box-shadow: 0 0 24px rgba(0,255,136,0.25), 0 4px 20px rgba(0,0,0,0.6);
+      box-shadow: ${hudShadow};
       font-family: Rajdhani, sans-serif;
       min-width: 380px;
       max-width: 90vw;
@@ -1006,25 +1197,25 @@ function showNavHUD(name, dist, time, eta) {
     #navHUD-dest {
       font-family: Orbitron, monospace;
       font-size: 0.6rem;
-      color: #00ff88;
+      color: ${destClr};
       letter-spacing: 1px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
       max-width: 130px;
     }
-    #navHUD-name { color: #e8f4ff; font-family: Rajdhani,sans-serif; font-size:0.85rem; font-weight:600; }
+    #navHUD-name { color: ${nameClr}; font-family: Rajdhani,sans-serif; font-size:0.85rem; font-weight:600; }
     #navHUD-stats { display:flex; align-items:center; gap:10px; flex:1; justify-content:center; }
     .navHUD-stat { text-align:center; min-width:64px; }
-    #navHUD-dist { font-family:Orbitron,monospace; font-size:1.1rem; color:#00ff88; font-weight:700; line-height:1; }
-    #navHUD-time { font-family:Orbitron,monospace; font-size:1.1rem; color:#00cfff; font-weight:700; line-height:1; }
-    #navHUD-eta  { font-family:Orbitron,monospace; font-size:0.85rem; color:#ffaa00; font-weight:700; line-height:1; }
-    .navHUD-label { font-size:0.55rem; color:#556; letter-spacing:1.5px; margin-top:3px; font-family:Orbitron,monospace; }
-    .navHUD-divider { width:1px; height:36px; background:rgba(0,255,136,0.2); }
+    #navHUD-dist { font-family:Orbitron,monospace; font-size:1.1rem; color:${distClr}; font-weight:700; line-height:1; }
+    #navHUD-time { font-family:Orbitron,monospace; font-size:1.1rem; color:${timeClr}; font-weight:700; line-height:1; }
+    #navHUD-eta  { font-family:Orbitron,monospace; font-size:0.85rem; color:${etaClr}; font-weight:700; line-height:1; }
+    .navHUD-label { font-size:0.55rem; color:${labelClr}; letter-spacing:1.5px; margin-top:3px; font-family:Orbitron,monospace; }
+    .navHUD-divider { width:1px; height:36px; background:${dividerClr}; }
     #navHUD-cancel {
-      background: rgba(255,68,102,0.12);
-      color: #ff4466;
-      border: 1px solid rgba(255,68,102,0.4);
+      background: ${cancelBg};
+      color: ${cancelClr};
+      border: 1px solid ${cancelBdr};
       border-radius: 10px;
       padding: 6px 14px;
       font-family: Orbitron,monospace;
@@ -1034,7 +1225,7 @@ function showNavHUD(name, dist, time, eta) {
       white-space: nowrap;
       transition: background 0.2s;
     }
-    #navHUD-cancel:hover { background: rgba(255,68,102,0.25); }
+    #navHUD-cancel:hover { background: ${cancelHov}; }
   `;
   document.head.appendChild(style);
   mapEl.appendChild(hud);
@@ -1077,6 +1268,30 @@ function clearRoute() {
 }
 
 // ─── Render Facility Markers on Map ──────────────────────────
+function makeLabeledMarker(position, iconUrl, labelText, isNearest) {
+  // Short label: first 14 chars to keep it readable on map
+  const shortLabel = labelText.length > 14 ? labelText.slice(0, 13) + "…" : labelText;
+  return new google.maps.Marker({
+    position,
+    map,
+    icon: {
+      url: iconUrl,
+      scaledSize: new google.maps.Size(isNearest ? 44 : 36, isNearest ? 44 : 36),
+      anchor: new google.maps.Point(isNearest ? 22 : 18, isNearest ? 22 : 18),
+      labelOrigin: new google.maps.Point(isNearest ? 22 : 18, isNearest ? 56 : 48),
+    },
+    label: {
+      text: shortLabel,
+      color: isNearest ? "#00ff88" : "#e8f4ff",
+      fontSize: isNearest ? "11px" : "10px",
+      fontWeight: isNearest ? "700" : "500",
+      fontFamily: "Rajdhani, sans-serif",
+    },
+    title: labelText,
+    zIndex: isNearest ? 600 : 500,
+  });
+}
+
 function renderFacilityMarkers() {
   facilityMarkers.hospitals.forEach(m => m.setMap(null));
   facilityMarkers.police.forEach(m => m.setMap(null));
@@ -1087,17 +1302,12 @@ function renderFacilityMarkers() {
 
   if (state.activeFilter === "all" || state.activeFilter === "hospital") {
     state.hospitals.forEach((h, i) => {
-      const marker = new google.maps.Marker({
-        position: { lat: h.lat, lng: h.lng },
-        map,
-        icon: {
-          url: hospitalIconUrl(),
-          scaledSize: new google.maps.Size(36, 36),
-          anchor: new google.maps.Point(18, 18),
-        },
-        title: h.name,
-        zIndex: 500,
-      });
+      const marker = makeLabeledMarker(
+        { lat: h.lat, lng: h.lng },
+        hospitalIconUrl(),
+        h.name,
+        i === 0,
+      );
       marker.addListener("click", () => {
         infoWindow.setContent(buildPopup(h, "🏥", "#ff6b35", i === 0));
         infoWindow.open(map, marker);
@@ -1108,17 +1318,12 @@ function renderFacilityMarkers() {
 
   if (state.activeFilter === "all" || state.activeFilter === "police") {
     state.policeStations.forEach((p, i) => {
-      const marker = new google.maps.Marker({
-        position: { lat: p.lat, lng: p.lng },
-        map,
-        icon: {
-          url: policeIconUrl(),
-          scaledSize: new google.maps.Size(36, 36),
-          anchor: new google.maps.Point(18, 18),
-        },
-        title: p.name,
-        zIndex: 500,
-      });
+      const marker = makeLabeledMarker(
+        { lat: p.lat, lng: p.lng },
+        policeIconUrl(),
+        p.name,
+        i === 0,
+      );
       marker.addListener("click", () => {
         infoWindow.setContent(buildPopup(p, "🚔", "#0096ff", i === 0));
         infoWindow.open(map, marker);
@@ -1129,22 +1334,44 @@ function renderFacilityMarkers() {
 }
 
 function buildPopup(facility, icon, color, isNearest) {
+  const isLight = document.body.classList.contains("light-mode");
+
+  // theme tokens
+  const bg        = isLight ? "#ffffff"  : "#050d1e";
+  const txt       = isLight ? "#0f172a"  : "#e8f4ff";
+  const subTxt    = isLight ? "#64748b"  : "#7090b0";
+  const distTxt   = isLight ? "#334155"  : "#a0c0e0";
+  const wrapBdr   = isLight ? `rgba(37,99,235,0.18)` : `${color}44`;
+  const nearBg    = isLight ? "rgba(5,150,105,0.1)"   : "rgba(0,255,136,0.15)";
+  const nearBdr   = isLight ? "rgba(5,150,105,0.3)"   : "rgba(0,255,136,0.4)";
+  const nearClr   = isLight ? "#059669"  : "#00ff88";
+  const callBg    = isLight ? "rgba(5,150,105,0.07)"  : "rgba(0,255,136,0.1)";
+  const callBdr   = isLight ? "rgba(5,150,105,0.25)"  : "rgba(0,255,136,0.3)";
+  const callClr   = isLight ? "#059669"  : "#00ff88";
+  const findBg    = isLight ? "rgba(234,88,12,0.07)"  : "rgba(255,170,0,0.08)";
+  const findBdr   = isLight ? "rgba(234,88,12,0.25)"  : "rgba(255,170,0,0.3)";
+  const findClr   = isLight ? "#ea580c"  : "#ffaa00";
+  const navBg     = isLight ? "rgba(37,99,235,0.07)"  : "rgba(0,150,255,0.1)";
+  const navBdr    = isLight ? "rgba(37,99,235,0.25)"  : "rgba(0,150,255,0.3)";
+  const navClr    = isLight ? "#2563eb"  : "#0096ff";
+  const durClr    = isLight ? "#d97706"  : "#ffaa00";
+
   return `
-    <div style="background:#050d1e;color:#e8f4ff;padding:14px;min-width:220px;font-family:Rajdhani,sans-serif;border-radius:8px;border:1px solid ${color}44;">
+    <div style="background:${bg};color:${txt};padding:14px;min-width:220px;font-family:Rajdhani,sans-serif;border-radius:8px;border:1px solid ${wrapBdr};">
       <div style="font-family:Orbitron,monospace;color:${color};font-size:0.62rem;letter-spacing:2px;margin-bottom:8px;">
         ${icon} ${(facility.type || "FACILITY").toUpperCase()}
-        ${isNearest ? `<span style="margin-left:8px;padding:2px 8px;background:rgba(0,255,136,0.15);border:1px solid rgba(0,255,136,0.4);border-radius:10px;font-size:0.55rem;color:#00ff88;">NEAREST</span>` : ""}
+        ${isNearest ? `<span style="margin-left:8px;padding:2px 8px;background:${nearBg};border:1px solid ${nearBdr};border-radius:10px;font-size:0.55rem;color:${nearClr};">NEAREST</span>` : ""}
       </div>
-      <div style="font-weight:600;font-size:0.95rem;margin-bottom:6px;">${facility.name}</div>
-      ${facility.address ? `<div style="font-size:0.78rem;color:#7090b0;margin-bottom:6px;">📌 ${facility.address}</div>` : ""}
-      <div style="font-size:0.8rem;color:#a0c0e0;margin-bottom:8px;">📍 <b style="color:${color};">${facility.dist.toFixed(2)} km</b>${facility.duration ? ` &nbsp;·&nbsp; <span style="color:#ffaa00;">${formatDuration(facility.duration)}</span>` : ""} away</div>
+      <div style="font-weight:600;font-size:0.95rem;margin-bottom:6px;color:${txt};">${facility.name}</div>
+      ${facility.address ? `<div style="font-size:0.78rem;color:${subTxt};margin-bottom:6px;">📌 ${facility.address}</div>` : ""}
+      <div style="font-size:0.8rem;color:${distTxt};margin-bottom:8px;">📍 <b style="color:${color};">${facility.dist.toFixed(2)} km</b>${facility.duration ? ` &nbsp;·&nbsp; <span style="color:${durClr};">${formatDuration(facility.duration)}</span>` : ""} away</div>
       <div style="display:flex;gap:8px;">
         ${
           facility.phone
-            ? `<a href="tel:${facility.phone}" style="flex:1;padding:7px;background:rgba(0,255,136,0.1);border:1px solid rgba(0,255,136,0.3);border-radius:6px;color:#00ff88;text-decoration:none;text-align:center;font-size:0.75rem;font-family:Orbitron,monospace;letter-spacing:0.5px;">📞 CALL</a>`
-            : `<a href="https://www.google.com/search?q=${encodeURIComponent(facility.name + ' phone number contact')}" target="_blank" rel="noopener" style="flex:1;padding:7px;background:rgba(255,170,0,0.08);border:1px solid rgba(255,170,0,0.3);border-radius:6px;color:#ffaa00;text-decoration:none;text-align:center;font-size:0.7rem;font-family:Orbitron,monospace;letter-spacing:0.5px;">🔍 FIND #</a>`
+            ? `<a href="tel:${facility.phone}" style="flex:1;padding:7px;background:${callBg};border:1px solid ${callBdr};border-radius:6px;color:${callClr};text-decoration:none;text-align:center;font-size:0.75rem;font-family:Orbitron,monospace;letter-spacing:0.5px;">📞 CALL</a>`
+            : `<a href="https://www.google.com/search?q=${encodeURIComponent(facility.name + ' phone number contact')}" target="_blank" rel="noopener" style="flex:1;padding:7px;background:${findBg};border:1px solid ${findBdr};border-radius:6px;color:${findClr};text-decoration:none;text-align:center;font-size:0.7rem;font-family:Orbitron,monospace;letter-spacing:0.5px;">🔍 FIND #</a>`
         }
-        <button onclick="window.navigateToFacility(${facility.lat}, ${facility.lng}, '${facility.name.replace(/'/g, "\\'")}')" style="flex:1;padding:7px;background:rgba(0,150,255,0.1);border:1px solid rgba(0,150,255,0.3);border-radius:6px;color:#0096ff;cursor:pointer;font-size:0.75rem;font-family:Orbitron,monospace;letter-spacing:0.5px;">🗺 NAV</button>
+        <button onclick="window.navigateToFacility(${facility.lat}, ${facility.lng}, '${facility.name.replace(/'/g, "\\'")}')" style="flex:1;padding:7px;background:${navBg};border:1px solid ${navBdr};border-radius:6px;color:${navClr};cursor:pointer;font-size:0.75rem;font-family:Orbitron,monospace;letter-spacing:0.5px;">🗺 NAV</button>
       </div>
     </div>`;
 }
@@ -1379,8 +1606,9 @@ function renderSosLog() {
     .join("");
 }
 
-// ─── Inject CSS (Google Maps InfoWindow dark theme) ────────────
+// ─── Inject CSS (Google Maps InfoWindow theme – swappable) ────
 const style = document.createElement("style");
+style.id = "seap-iw-style";
 style.textContent = `
   @keyframes sosRipple {
     0% { transform: scale(1); opacity: 1; }
@@ -1413,3 +1641,109 @@ setInterval(() => {
   const diff = Math.round((Date.now() - state.lastFetchTime) / 1000);
   DOM.updateTimeAgo.textContent = diff < 10 ? "just now" : `${diff}s ago`;
 }, 5000);
+
+// ─── Settings Modal + Theme Toggle ────────────────────────────
+(function () {
+  const overlay      = document.getElementById("settingsOverlay");
+  const openBtn      = document.getElementById("openSettingsBtn");
+  const closeBtn     = document.getElementById("closeSettingsBtn");
+  const themeDarkBtn = document.getElementById("themeDarkBtn");
+  const themeLightBtn= document.getElementById("themeLightBtn");
+
+  // Apply stored theme on load
+  const savedTheme = localStorage.getItem("seap_theme") || "dark";
+  applyTheme(savedTheme);
+
+  function applyTheme(theme) {
+    if (theme === "light") {
+      document.body.classList.add("light-mode");
+      themeLightBtn.classList.add("active");
+      themeDarkBtn.classList.remove("active");
+    } else {
+      document.body.classList.remove("light-mode");
+      themeDarkBtn.classList.add("active");
+      themeLightBtn.classList.remove("active");
+    }
+    localStorage.setItem("seap_theme", theme);
+  }
+
+  // Open modal
+  openBtn.addEventListener("click", e => {
+    e.stopPropagation();
+    DOM.userMenuBtn.classList.remove("open");
+    overlay.classList.add("open");
+  });
+
+  // Close modal
+  closeBtn.addEventListener("click", () => overlay.classList.remove("open"));
+  overlay.addEventListener("click", e => {
+    if (e.target === overlay) overlay.classList.remove("open");
+  });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") overlay.classList.remove("open");
+  });
+
+  // Theme buttons
+  themeDarkBtn.addEventListener("click",  () => applyTheme("dark"));
+  themeLightBtn.addEventListener("click", () => applyTheme("light"));
+
+  // ── Map style switcher (called after map is ready) ────────────
+  function updateMapTheme(theme) {
+    if (!map) return;
+    if (theme === "light") {
+      map.setOptions({ styles: LIGHT_MAP_STYLE, backgroundColor: "#f8faff" });
+      // Update InfoWindow popup style
+      const iwStyle = document.getElementById("seap-iw-style");
+      if (iwStyle) {
+        iwStyle.textContent = `
+          .gm-style .gm-style-iw-c {
+            background: #ffffff !important;
+            border: 1px solid rgba(37,99,235,0.2) !important;
+            border-radius: 12px !important;
+            box-shadow: 0 4px 20px rgba(15,23,42,0.12) !important;
+            padding: 0 !important;
+          }
+          .gm-style .gm-style-iw-d { overflow: auto !important; }
+          .gm-style .gm-style-iw-t::after {
+            background: #ffffff !important;
+            box-shadow: none !important;
+          }
+          .gm-style-iw-chr { display: none !important; }
+          .gm-ui-hover-effect { display: none !important; }
+        `;
+      }
+    } else {
+      map.setOptions({ styles: DARK_MAP_STYLE, backgroundColor: "#020510" });
+      const iwStyle = document.getElementById("seap-iw-style");
+      if (iwStyle) {
+        iwStyle.textContent = `
+          .gm-style .gm-style-iw-c {
+            background: #050d1e !important;
+            border: 1px solid rgba(0,245,255,0.3) !important;
+            border-radius: 10px !important;
+            box-shadow: 0 0 30px rgba(0,245,255,0.15) !important;
+            padding: 0 !important;
+          }
+          .gm-style .gm-style-iw-d { overflow: auto !important; }
+          .gm-style .gm-style-iw-t::after {
+            background: #050d1e !important;
+            box-shadow: none !important;
+          }
+          .gm-style-iw-chr { display: none !important; }
+          .gm-ui-hover-effect { display: none !important; }
+        `;
+      }
+    }
+  }
+
+  // Patch applyTheme to also update the map
+  const _origApply = applyTheme;
+  applyTheme = function(theme) {
+    _origApply(theme);
+    updateMapTheme(theme);
+  };
+
+  // If map was already initialised when page loaded with saved theme, sync it now
+  updateMapTheme(savedTheme);
+})();
+
