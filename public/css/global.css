@@ -112,16 +112,17 @@ body.light-mode .corner-decor.bottom-left {
 html {
   scroll-behavior: smooth;
   font-size: 16px;
-  height: 100%;
-  overflow: hidden;
+  min-height: 100%;
+  overflow-x: hidden;
 }
 
 body {
   font-family: var(--font-body);
   background: var(--bg-deep);
   color: var(--text-primary);
-  overflow: hidden;
-  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  min-height: 100%;
   line-height: 1.6;
 }
 
