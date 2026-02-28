@@ -1596,44 +1596,27 @@ function stopSosAlarm() {
   sosAlarm.onended = null;
   sosAlarm.pause();
   sosAlarm.currentTime = 0;
+
+  // Reset SOS state so button is usable again
+  state.sosActive = false;
+  DOM.sosBtn.style.background = "";
+  if (sosCircle) {
+    sosCircle.setMap(null);
+    sosCircle = null;
+  }
 }
 window.stopSosAlarm = stopSosAlarm;
 
 // ─── SOS Button ───────────────────────────────────────────────
-let sosHoldTimer = null;
-let sosProgress = 0;
-
-DOM.sosBtn.addEventListener("mousedown", startSosHold);
-DOM.sosBtn.addEventListener("touchstart", startSosHold, { passive: true });
-DOM.sosBtn.addEventListener("mouseup", cancelSosHold);
-DOM.sosBtn.addEventListener("mouseleave", cancelSosHold);
-DOM.sosBtn.addEventListener("touchend", cancelSosHold);
-
-function startSosHold() {
+DOM.sosBtn.addEventListener("click", () => {
   if (state.sosActive) return;
-  sosProgress = 0;
-  DOM.sosBtn.style.transform = "scale(0.95)";
-  sosHoldTimer = setInterval(() => {
-    sosProgress += 10;
-    DOM.sosBtn.style.background = `conic-gradient(#ff2244 ${sosProgress * 3.6}deg, #cc0033 ${sosProgress * 3.6}deg)`;
-    if (sosProgress >= 100) {
-      clearInterval(sosHoldTimer);
-      triggerSOS();
-    }
-  }, 100);
-}
-
-function cancelSosHold() {
-  if (sosHoldTimer) {
-    clearInterval(sosHoldTimer);
-    sosHoldTimer = null;
-  }
-  if (!state.sosActive) {
-    DOM.sosBtn.style.transform = "";
-    DOM.sosBtn.style.background = "";
-  }
-  sosProgress = 0;
-}
+  triggerSOS();
+});
+DOM.sosBtn.addEventListener("touchend", (e) => {
+  e.preventDefault();
+  if (state.sosActive) return;
+  triggerSOS();
+}, { passive: false });
 
 async function triggerSOS() {
   state.sosActive = true;
@@ -1689,14 +1672,6 @@ async function triggerSOS() {
     });
   }
 
-  setTimeout(() => {
-    state.sosActive = false;
-    DOM.sosBtn.style.background = "";
-    if (sosCircle) {
-      sosCircle.setMap(null);
-      sosCircle = null;
-    }
-  }, 30000);
 }
 
 function renderSosLog() {
