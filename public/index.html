@@ -273,7 +273,7 @@
             const data = await res.json();
 
             if (data.success) {
-              localStorage.setItem("seap_user", JSON.stringify(data.user));
+              sessionStorage.setItem("seap_user", JSON.stringify(data.user));
               successEl.classList.add("show");
               btnText.textContent = "SUCCESS ✓";
               showToast("Welcome back, " + data.user.name + "!", "success");

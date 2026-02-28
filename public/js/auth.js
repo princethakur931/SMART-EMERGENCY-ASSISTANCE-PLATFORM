@@ -33,7 +33,7 @@ function removeToast(toast) {
 // ─── Auth Guards ──────────────────────────────────────────────
 function getUser() {
   try {
-    return JSON.parse(localStorage.getItem("seap_user") || "null");
+    return JSON.parse(sessionStorage.getItem("seap_user") || "null");
   } catch {
     return null;
   }
@@ -56,7 +56,7 @@ function redirectIfAuth() {
 }
 
 function logout() {
-  localStorage.removeItem("seap_user");
+  sessionStorage.removeItem("seap_user");
   showToast("Logged out successfully", "info", 2000);
   setTimeout(() => {
     window.location.href = "index.html";

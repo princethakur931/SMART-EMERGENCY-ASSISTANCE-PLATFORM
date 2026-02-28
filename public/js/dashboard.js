@@ -82,14 +82,18 @@ if (CURRENT_USER) {
   DOM.userMenuName.textContent = CURRENT_USER.name;
   DOM.dropdownUserName.textContent = CURRENT_USER.name;
 
-  // Load profile photo if set
-  const profilePhoto = localStorage.getItem("seap_profile_photo");
-  if (profilePhoto) {
-    DOM.userAvatarInitials.innerHTML =
-      `<img src="${profilePhoto}" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
-  } else {
-    DOM.userAvatarInitials.textContent = initials;
-  }
+  // Load profile photo from MongoDB API
+  fetch(`/api/profile/${CURRENT_USER.id}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.success && data.profile && data.profile.photo) {
+        DOM.userAvatarInitials.innerHTML =
+          `<img src="${data.profile.photo}" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
+      } else {
+        DOM.userAvatarInitials.textContent = initials;
+      }
+    })
+    .catch(() => { DOM.userAvatarInitials.textContent = initials; });
 }
 
 DOM.userMenuBtn.addEventListener("click", e => {
@@ -316,7 +320,7 @@ let facilityMarkers = { hospitals: [], police: [] };
 
 // ─── Google Maps Callback ─────────────────────────────────────
 window.initMap = function () {
-  const initTheme = localStorage.getItem("seap_theme") || "dark";
+  const initTheme = sessionStorage.getItem("seap_theme") || "dark";
   const initStyle = initTheme === "light" ? LIGHT_MAP_STYLE : DARK_MAP_STYLE;
   const initBg    = initTheme === "light" ? "#f8faff" : "#020510";
 
@@ -1766,7 +1770,7 @@ window.sendBrowserNotif = sendBrowserNotif;
   const themeLightBtn= document.getElementById("themeLightBtn");
 
   // Apply stored theme on load
-  const savedTheme = localStorage.getItem("seap_theme") || "dark";
+  const savedTheme = sessionStorage.getItem("seap_theme") || "dark";
   applyTheme(savedTheme);
 
   function applyTheme(theme) {
@@ -1779,7 +1783,7 @@ window.sendBrowserNotif = sendBrowserNotif;
       themeDarkBtn.classList.add("active");
       themeLightBtn.classList.remove("active");
     }
-    localStorage.setItem("seap_theme", theme);
+    sessionStorage.setItem("seap_theme", theme);
   }
 
   // Open modal
@@ -1804,10 +1808,10 @@ window.sendBrowserNotif = sendBrowserNotif;
 
   // ── SOS Sound Alert Toggle ────────────────────────────────────
   const sosSoundToggle = document.getElementById("sosSoundToggle");
-  const savedSosSound = localStorage.getItem("seap_sosSound");
+  const savedSosSound = sessionStorage.getItem("seap_sosSound");
   if (savedSosSound === "false") sosSoundToggle.checked = false;
   sosSoundToggle.addEventListener("change", () => {
-    localStorage.setItem("seap_sosSound", sosSoundToggle.checked);
+    sessionStorage.setItem("seap_sosSound", sosSoundToggle.checked);
     if (!sosSoundToggle.checked && state.sosActive) {
       stopSosAlarm();
     }
@@ -1820,7 +1824,7 @@ window.sendBrowserNotif = sendBrowserNotif;
 
   // ── Browser Notifications Toggle ─────────────────────────────
   const browserNotifToggle = document.getElementById("browserNotifToggle");
-  const savedBrowserNotif = localStorage.getItem("seap_browserNotif");
+  const savedBrowserNotif = sessionStorage.getItem("seap_browserNotif");
   // Restore saved state
   if (savedBrowserNotif === "true" && Notification.permission === "granted") {
     browserNotifToggle.checked = true;
@@ -1837,25 +1841,25 @@ window.sendBrowserNotif = sendBrowserNotif;
       const permission = await Notification.requestPermission();
       if (permission !== "granted") {
         browserNotifToggle.checked = false;
-        localStorage.setItem("seap_browserNotif", "false");
+        sessionStorage.setItem("seap_browserNotif", "false");
         showToast("❌ Notification permission denied", "warning", 3000);
         return;
       }
-      localStorage.setItem("seap_browserNotif", "true");
+      sessionStorage.setItem("seap_browserNotif", "true");
       showToast("📳 Browser notifications enabled", "success", 2000);
       new Notification("SEAP Alerts Active", {
         body: "You will now receive desktop alerts for SOS and key events.",
         icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🆘</text></svg>"
       });
     } else {
-      localStorage.setItem("seap_browserNotif", "false");
+      sessionStorage.setItem("seap_browserNotif", "false");
       showToast("Browser notifications disabled", "info", 2000);
     }
   });
 
   // ── Auto Refresh Toggle ───────────────────────────────────────
   const autoRefreshToggle = document.getElementById("autoRefreshToggle");
-  const savedAutoRefresh = localStorage.getItem("seap_autoRefresh");
+  const savedAutoRefresh = sessionStorage.getItem("seap_autoRefresh");
   if (savedAutoRefresh === "false") {
     autoRefreshToggle.checked = false;
     // Stop the interval that was started in initMap
@@ -1865,7 +1869,7 @@ window.sendBrowserNotif = sendBrowserNotif;
     }
   }
   autoRefreshToggle.addEventListener("change", () => {
-    localStorage.setItem("seap_autoRefresh", autoRefreshToggle.checked);
+    sessionStorage.setItem("seap_autoRefresh", autoRefreshToggle.checked);
     if (autoRefreshToggle.checked) {
       if (!iotFetchInterval) {
         fetchIoTLocation();

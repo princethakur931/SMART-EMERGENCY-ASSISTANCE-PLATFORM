@@ -8,34 +8,80 @@
 // ─── Auth Guard ───────────────────────────────────────────────
 const CURRENT_USER = requireAuth();
 
-// ─── Storage Keys ─────────────────────────────────────────────
-const PROFILE_KEY = "seap_profile";          // { address, phone, emergencyContact, memberSince }
-const PHOTO_KEY   = "seap_profile_photo";    // base64 string
-const DOCS_KEY    = "seap_documents";        // array of doc objects
+// ─── API Helpers ─────────────────────────────────────────────
+let profileCache = { address: "", phone: "", emergencyContact: "", memberSince: null, photo: null, documents: [] };
 
-// ─── Load Helpers ─────────────────────────────────────────────
-function loadProfile() {
-  try { return JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}"); }
-  catch { return {}; }
+async function apiGetProfile() {
+  try {
+    const res = await fetch(`/api/profile/${CURRENT_USER.id}`);
+    const data = await res.json();
+    if (data.success && data.profile) {
+      profileCache = {
+        address:          data.profile.address          || "",
+        phone:            data.profile.phone            || "",
+        emergencyContact: data.profile.emergencyContact || "",
+        memberSince:      data.profile.memberSince      || null,
+        photo:            data.profile.photo            || null,
+        documents:        data.profile.documents        || [],
+      };
+    }
+  } catch (err) { console.warn("apiGetProfile error:", err.message); }
 }
-function saveProfile(obj) {
-  localStorage.setItem(PROFILE_KEY, JSON.stringify(obj));
+
+async function apiSaveProfile(fields) {
+  try {
+    const res = await fetch(`/api/profile/${CURRENT_USER.id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(fields),
+    });
+    return await res.json();
+  } catch (err) { console.warn("apiSaveProfile error:", err.message); return { success: false }; }
 }
-function loadDocs() {
-  try { return JSON.parse(localStorage.getItem(DOCS_KEY) || "[]"); }
-  catch { return []; }
+
+async function apiSavePhoto(base64) {
+  try {
+    await fetch(`/api/profile/${CURRENT_USER.id}/photo`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ photo: base64 }),
+    });
+    profileCache.photo = base64;
+  } catch (err) { console.warn("apiSavePhoto error:", err.message); }
 }
-function saveDocs(arr) {
-  localStorage.setItem(DOCS_KEY, JSON.stringify(arr));
+
+async function apiRemovePhoto() {
+  try {
+    await fetch(`/api/profile/${CURRENT_USER.id}/photo`, { method: "DELETE" });
+    profileCache.photo = null;
+  } catch (err) { console.warn("apiRemovePhoto error:", err.message); }
 }
-function loadPhoto() {
-  return localStorage.getItem(PHOTO_KEY) || null;
+
+async function apiAddDocument(doc) {
+  try {
+    const res = await fetch(`/api/profile/${CURRENT_USER.id}/document`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(doc),
+    });
+    const data = await res.json();
+    if (data.success) profileCache.documents.push(doc);
+    return data.success;
+  } catch (err) { console.warn("apiAddDocument error:", err.message); return false; }
 }
-function savePhoto(base64) {
-  localStorage.setItem(PHOTO_KEY, base64);
+
+async function apiDeleteDocument(docId) {
+  try {
+    await fetch(`/api/profile/${CURRENT_USER.id}/document/${docId}`, { method: "DELETE" });
+    profileCache.documents = profileCache.documents.filter(d => d.id !== docId);
+  } catch (err) { console.warn("apiDeleteDocument error:", err.message); }
 }
-function removePhoto() {
-  localStorage.removeItem(PHOTO_KEY);
+
+async function apiClearDocuments() {
+  try {
+    await fetch(`/api/profile/${CURRENT_USER.id}/documents`, { method: "DELETE" });
+    profileCache.documents = [];
+  } catch (err) { console.warn("apiClearDocuments error:", err.message); }
 }
 
 // ─── File Type → Emoji Icon ───────────────────────────────────
@@ -56,9 +102,9 @@ function formatBytes(bytes) {
   return (bytes / 1048576).toFixed(2) + " MB";
 }
 
-// ─── Apply theme from localStorage (matches dashboard logic) ──
+// ─── Apply theme from sessionStorage (matches dashboard logic) ──
 (function applyTheme() {
-  const t = localStorage.getItem("seap_theme");
+  const t = sessionStorage.getItem("seap_theme");
   if (t === "light") document.body.classList.add("light-mode");
 })();
 
@@ -72,10 +118,11 @@ document.addEventListener("click", () => userMenuBtn.classList.remove("open"));
 document.getElementById("logoutBtn").addEventListener("click", logout);
 
 // ─── Initialize UI ────────────────────────────────────────────
-function init() {
+async function init() {
+  await apiGetProfile();
   const user    = CURRENT_USER;
-  const profile = loadProfile();
-  const photo   = loadPhoto();
+  const profile = profileCache;
+  const photo   = profileCache.photo;
 
   /* ── Topbar avatar & name ── */
   const topbarAvatar = document.getElementById("userAvatarInitials");
@@ -148,27 +195,29 @@ document.getElementById("photoInput").addEventListener("change", function () {
   const reader = new FileReader();
   reader.onload = e => {
     const b64 = e.target.result;
-    savePhoto(b64);
-    applyPhotoUI(b64);
-    // Update topbar avatar live
-    const topbarAvatar = document.getElementById("userAvatarInitials");
-    topbarAvatar.innerHTML = `<img src="${b64}" alt="photo" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
-    showToast("Profile photo updated!", "success");
+    apiSavePhoto(b64).then(() => {
+      applyPhotoUI(b64);
+      // Update topbar avatar live
+      const topbarAvatar = document.getElementById("userAvatarInitials");
+      topbarAvatar.innerHTML = `<img src="${b64}" alt="photo" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
+      showToast("Profile photo updated!", "success");
+    });
   };
   reader.readAsDataURL(file);
 });
 
 document.getElementById("removePhotoBtn").addEventListener("click", () => {
-  removePhoto();
-  applyPhotoUI(null);
-  const topbarAvatar = document.getElementById("userAvatarInitials");
-  topbarAvatar.innerHTML = "";
-  topbarAvatar.textContent = initials(CURRENT_USER.name);
-  showToast("Profile photo removed", "info");
+  apiRemovePhoto().then(() => {
+    applyPhotoUI(null);
+    const topbarAvatar = document.getElementById("userAvatarInitials");
+    topbarAvatar.innerHTML = "";
+    topbarAvatar.textContent = initials(CURRENT_USER.name);
+    showToast("Profile photo removed", "info");
+  });
 });
 
 // ─── Save Profile ─────────────────────────────────────────────
-document.getElementById("saveProfileBtn").addEventListener("click", () => {
+document.getElementById("saveProfileBtn").addEventListener("click", async () => {
   try {
     const newName     = document.getElementById("nameInput").value.trim();
     const address     = document.getElementById("addressInput").value.trim();
@@ -177,21 +226,19 @@ document.getElementById("saveProfileBtn").addEventListener("click", () => {
 
     if (!newName) { showToast("Name cannot be empty", "warning"); return; }
 
-    /* Update seap_user name */
-    const currentUser = JSON.parse(localStorage.getItem("seap_user") || "{}");
-    const user = { ...currentUser, name: newName };
-    localStorage.setItem("seap_user", JSON.stringify(user));
+    /* Save to MongoDB via API (also updates name in User collection) */
+    const result = await apiSaveProfile({ name: newName, address, phone, emergencyContact: emergency });
+    if (!result.success) { showToast("Error saving profile. Please try again.", "error"); return; }
 
-    /* Update profile data */
-    const profile = loadProfile();
-    const updated = {
-      ...profile,
-      address,
-      phone,
-      emergencyContact: emergency,
-      memberSince: profile.memberSince || new Date().toISOString(),
-    };
-    saveProfile(updated);
+    /* Update cache */
+    profileCache.address = address;
+    profileCache.phone = phone;
+    profileCache.emergencyContact = emergency;
+
+    /* Update sessionStorage user name */
+    const currentUser = JSON.parse(sessionStorage.getItem("seap_user") || "{}");
+    const user = { ...currentUser, name: newName };
+    sessionStorage.setItem("seap_user", JSON.stringify(user));
 
     /* Refresh displayed name */
     document.getElementById("heroName").textContent     = newName;
@@ -305,7 +352,6 @@ document.getElementById("confirmUploadBtn").addEventListener("click", () => {
 
   const reader = new FileReader();
   reader.onload = e => {
-    const docs = loadDocs();
     const newDoc = {
       id:         Date.now().toString(),
       label,
@@ -315,11 +361,12 @@ document.getElementById("confirmUploadBtn").addEventListener("click", () => {
       data:       e.target.result,   // base64 data URL
       uploadedAt: new Date().toISOString(),
     };
-    docs.push(newDoc);
-    saveDocs(docs);
-    resetUploadForm();
-    renderDocs();
-    showToast(`"${label}" uploaded successfully!`, "success");
+    apiAddDocument(newDoc).then(ok => {
+      resetUploadForm();
+      renderDocs();
+      if (ok) showToast(`"${label}" uploaded successfully!`, "success");
+      else showToast("Upload failed, please try again.", "error");
+    });
   };
   reader.readAsDataURL(pendingFile);
 });
@@ -334,7 +381,7 @@ function resetUploadForm() {
 
 // ─── Render Documents List ────────────────────────────────────
 function renderDocs() {
-  const docs    = loadDocs();
+  const docs    = profileCache.documents;
   const list    = document.getElementById("docsList");
   const empty   = document.getElementById("docsEmpty");
   const badge   = document.getElementById("docCountBadge");
@@ -389,8 +436,7 @@ function renderDocs() {
 }
 
 function downloadDoc(id) {
-  const docs = loadDocs();
-  const doc  = docs.find(d => d.id === id);
+  const doc  = profileCache.documents.find(d => d.id === id);
   if (!doc) return;
   const a = document.createElement("a");
   a.href = doc.data;
@@ -399,14 +445,13 @@ function downloadDoc(id) {
 }
 
 function deleteDoc(id) {
-  let docs = loadDocs();
-  const doc = docs.find(d => d.id === id);
+  const doc = profileCache.documents.find(d => d.id === id);
   if (!doc) return;
   if (!confirm(`Delete "${doc.label}" (${doc.filename})?`)) return;
-  docs = docs.filter(d => d.id !== id);
-  saveDocs(docs);
-  renderDocs();
-  showToast(`"${doc.label}" deleted`, "info");
+  apiDeleteDocument(id).then(() => {
+    renderDocs();
+    showToast(`"${doc.label}" deleted`, "info");
+  });
 }
 
 // ─── Escape HTML ──────────────────────────────────────────────
@@ -439,11 +484,11 @@ function escHtml(str = "") {
       themeDarkBtn.classList.add("active");
       themeLightBtn.classList.remove("active");
     }
-    localStorage.setItem("seap_theme", theme);
+    sessionStorage.setItem("seap_theme", theme);
   }
 
   // Sync buttons to saved theme
-  const savedTheme = localStorage.getItem("seap_theme") || "dark";
+  const savedTheme = sessionStorage.getItem("seap_theme") || "dark";
   applySettingsTheme(savedTheme);
 
   openBtn.addEventListener("click", e => {
@@ -464,13 +509,14 @@ function escHtml(str = "") {
   themeLightBtn.addEventListener("click", () => applySettingsTheme("light"));
 
   clearDocsBtn.addEventListener("click", () => {
-    const docs = loadDocs();
+    const docs = profileCache.documents;
     if (docs.length === 0) { showToast("No documents to clear", "info"); return; }
     if (!confirm(`Delete all ${docs.length} document(s)?`)) return;
-    saveDocs([]);
-    renderDocs();
-    overlay.classList.remove("open");
-    showToast("All documents cleared", "info");
+    apiClearDocuments().then(() => {
+      renderDocs();
+      overlay.classList.remove("open");
+      showToast("All documents cleared", "info");
+    });
   });
 })();
 
