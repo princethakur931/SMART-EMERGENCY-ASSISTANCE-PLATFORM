@@ -715,6 +715,61 @@
   color: #0096ff;
 }
 
+/* ─── Search Radius Stepper (Settings modal) ─────────────────── */
+.radius-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.radius-step-btn {
+  width: 32px;
+  height: 32px;
+  background: var(--bg-glass);
+  border: none;
+  color: var(--primary);
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.radius-step-btn:hover:not(:disabled) {
+  background: rgba(0, 245, 255, 0.15);
+}
+
+.radius-step-btn:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.radius-step-val {
+  min-width: 52px;
+  text-align: center;
+  font-family: var(--font-tech);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--primary);
+  background: rgba(0, 245, 255, 0.06);
+  padding: 0 6px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-left: 1px solid var(--border-primary);
+  border-right: 1px solid var(--border-primary);
+}
+
 /* Map Container */
 #map {
   flex: 1;
@@ -1504,6 +1559,14 @@ body.light-mode .filter-btn.active {
   color: #ffffff;
   border-color: var(--primary);
   box-shadow: 0 2px 8px rgba(37,99,235,0.3);
+}
+body.light-mode .radius-stepper { border-color: rgba(37,99,235,0.2); }
+body.light-mode .radius-step-btn { background: rgba(37,99,235,0.05); color: var(--primary); }
+body.light-mode .radius-step-btn:hover:not(:disabled) { background: rgba(37,99,235,0.12); }
+body.light-mode .radius-step-val {
+  background: rgba(37,99,235,0.07);
+  border-color: rgba(37,99,235,0.2);
+  color: var(--primary);
 }
 
 /* ── Map stats bar ── */

@@ -35,7 +35,14 @@ const DOM = {
   userMenuBtn: document.getElementById("userMenuBtn"),
   mapLoadingOverlay: document.getElementById("mapLoadingOverlay"),
   sosLogList: document.getElementById("sosLogList"),
+  radiusDecBtn: document.getElementById("radiusDecBtn"),
+  radiusIncBtn: document.getElementById("radiusIncBtn"),
+  radiusStepDisplay: document.getElementById("radiusStepDisplay"),
+  searchRadiusDisplay: document.getElementById("searchRadiusDisplay"),
 };
+
+// ─── IoT Fetch Interval Handle (for Auto Refresh toggle) ────
+let iotFetchInterval = null;
 
 // ─── State ────────────────────────────────────────────────────
 let state = {
@@ -51,6 +58,7 @@ let state = {
   lastFetchTime: null,
   locationHistory: [],
   sosLog: [],
+  searchRadius: 10000,  // metres — default 10 km
 };
 
 // ─── Active Navigation State ───────────────────────────────────
@@ -72,8 +80,16 @@ if (CURRENT_USER) {
     .toUpperCase()
     .slice(0, 2);
   DOM.userMenuName.textContent = CURRENT_USER.name;
-  DOM.userAvatarInitials.textContent = initials;
   DOM.dropdownUserName.textContent = CURRENT_USER.name;
+
+  // Load profile photo if set
+  const profilePhoto = localStorage.getItem("seap_profile_photo");
+  if (profilePhoto) {
+    DOM.userAvatarInitials.innerHTML =
+      `<img src="${profilePhoto}" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
+  } else {
+    DOM.userAvatarInitials.textContent = initials;
+  }
 }
 
 DOM.userMenuBtn.addEventListener("click", e => {
@@ -84,6 +100,28 @@ document.addEventListener("click", () =>
   DOM.userMenuBtn.classList.remove("open"),
 );
 DOM.logoutBtn.addEventListener("click", logout);
+
+// ─── Search Radius Stepper (− / +) ───────────────────────────
+const RADIUS_STEPS = [1000, 2000, 5000, 10000, 15000, 20000]; // metres
+let radiusStepIdx = 3; // default → 10 km
+
+function setSearchRadius(idx) {
+  radiusStepIdx = Math.max(0, Math.min(RADIUS_STEPS.length - 1, idx));
+  const newRadius = RADIUS_STEPS[radiusStepIdx];
+  state.searchRadius = newRadius;
+  const label = (newRadius / 1000) + " km";
+  if (DOM.radiusStepDisplay)   DOM.radiusStepDisplay.textContent  = label;
+  if (DOM.searchRadiusDisplay) DOM.searchRadiusDisplay.textContent = label;
+  // Disable buttons at boundaries
+  if (DOM.radiusDecBtn) DOM.radiusDecBtn.disabled = radiusStepIdx === 0;
+  if (DOM.radiusIncBtn) DOM.radiusIncBtn.disabled = radiusStepIdx === RADIUS_STEPS.length - 1;
+  updateSearchRadiusCircle();
+  fetchNearbyServices(state.lat, state.lng, newRadius);
+  showToast("Search radius set to " + label + " — refreshing...", "info", 2000);
+}
+
+if (DOM.radiusDecBtn) DOM.radiusDecBtn.addEventListener("click", () => setSearchRadius(radiusStepIdx - 1));
+if (DOM.radiusIncBtn) DOM.radiusIncBtn.addEventListener("click", () => setSearchRadius(radiusStepIdx + 1));
 
 // ─── Google Maps Light Style ─────────────────────────────────
 const LIGHT_MAP_STYLE = [
@@ -272,6 +310,7 @@ let directionsRenderer = null;
 let deviceMarker = null;
 let trailPolyline = null;
 let sosCircle = null;
+let searchRadiusCircle = null;
 let infoWindow = null;
 let facilityMarkers = { hospitals: [], police: [] };
 
@@ -335,7 +374,7 @@ window.initMap = function () {
 
   // Start IoT polling
   fetchIoTLocation();
-  setInterval(fetchIoTLocation, 3000);
+  iotFetchInterval = setInterval(fetchIoTLocation, 3000);
 };
 
 // ─── Real Browser Geolocation ─────────────────────────────────
@@ -362,6 +401,7 @@ function startRealGeoTracking() {
       state.lng = lng;
       state.mapReady = true;
       hideMapLoading();
+      updateSearchRadiusCircle();
       fetchNearbyServices(lat, lng);
       showToast(
         `📍 Real GPS locked (±${Math.round(accuracy)}m)`,
@@ -507,6 +547,8 @@ function updateDeviceMarker(lat, lng) {
     });
   } else {
     deviceMarker.setPosition(pos);
+    // Keep radius circle centred on device
+    if (searchRadiusCircle) searchRadiusCircle.setCenter(pos);
   }
 
   // Trail (last 20 positions)
@@ -623,6 +665,7 @@ async function fetchIoTLocation() {
       map.setZoom(15);
       state.mapReady = true;
       hideMapLoading();
+      updateSearchRadiusCircle();
       fetchNearbyServices(state.lat, state.lng);
     }
   } catch (err) {
@@ -631,41 +674,84 @@ async function fetchIoTLocation() {
   }
 }
 
+// ─── Draw / Update search-radius circle on map ───────────────
+function updateSearchRadiusCircle() {
+  if (!map) return;
+  if (searchRadiusCircle) searchRadiusCircle.setMap(null);
+  searchRadiusCircle = new google.maps.Circle({
+    map,
+    center: { lat: state.lat, lng: state.lng },
+    radius: state.searchRadius,
+    strokeColor: "#00f5ff",
+    strokeOpacity: 0.55,
+    strokeWeight: 1.5,
+    fillColor: "#00f5ff",
+    fillOpacity: 0.05,
+    clickable: false,
+  });
+}
+
 // ─── Fetch Nearby Services (Google Places API) ────────────────
-function fetchNearbyServices(lat, lng, radius = 10000) {
+function fetchNearbyServices(lat, lng, radius = state.searchRadius) {
   showToast("Scanning nearby emergency services...", "info", 2500);
 
   // Try Google Places API first; fallback to Overpass (OpenStreetMap real data)
   if (placesService) {
-    let hospitalsResult = null;
-    let policeResult = null;
+    // Run 3 searches: hospital type, multispecialty/emergency keyword, police
+    let hospitalsTypeResult   = null;  // type="hospital"
+    let hospitalsKwResult     = null;  // keyword="multispecialty hospital emergency trauma"
+    let policeResult          = null;
 
     function checkDone() {
-      if (hospitalsResult === null || policeResult === null) return;
+      if (hospitalsTypeResult === null || hospitalsKwResult === null || policeResult === null) return;
 
-      const mapResults = (arr, type) =>
-        (arr || [])
-          .filter(p => p.geometry)
-          .map(p => ({
-            id: p.place_id,
-            name: p.name,
-            lat: p.geometry.location.lat(),
-            lng: p.geometry.location.lng(),
-            phone: null,
-            address: p.vicinity || "",
-            type,
-            dist: getDistanceKm(
-              lat,
-              lng,
-              p.geometry.location.lat(),
-              p.geometry.location.lng(),
-            ),
-          }))
-          .sort((a, b) => a.dist - b.dist)
-          .slice(0, 20);
+      // Merge & deduplicate hospital results — big hospitals appear in both
+      const seenIds = new Set();
+      const mergedRaw = [...(hospitalsTypeResult || []), ...(hospitalsKwResult || [])];
+      const uniqueRaw = mergedRaw.filter(p => {
+        if (!p.geometry || seenIds.has(p.place_id)) return false;
+        seenIds.add(p.place_id);
+        return true;
+      });
 
-      const hospitals = mapResults(hospitalsResult, "hospital");
-      const police = mapResults(policeResult, "police");
+      // Type-priority score: pure "hospital" type gets priority over clinics
+      function hospitalPriority(p) {
+        const t = (p.types || []);
+        if (t.includes("hospital")) return 0;
+        if (t.includes("health"))   return 1;
+        return 2;
+      }
+
+      const hospitals = uniqueRaw
+        .map(p => ({
+          id: p.place_id,
+          name: p.name,
+          lat: p.geometry.location.lat(),
+          lng: p.geometry.location.lng(),
+          phone: null,
+          address: p.vicinity || "",
+          type: "hospital",
+          dist: getDistanceKm(lat, lng, p.geometry.location.lat(), p.geometry.location.lng()),
+          _priority: hospitalPriority(p),
+        }))
+        // Sort: hospital-type first, then by distance — big hospitals stay visible
+        .sort((a, b) => a._priority - b._priority || a.dist - b.dist)
+        .slice(0, 30);
+
+      const police = (policeResult || [])
+        .filter(p => p.geometry)
+        .map(p => ({
+          id: p.place_id,
+          name: p.name,
+          lat: p.geometry.location.lat(),
+          lng: p.geometry.location.lng(),
+          phone: null,
+          address: p.vicinity || "",
+          type: "police",
+          dist: getDistanceKm(lat, lng, p.geometry.location.lat(), p.geometry.location.lng()),
+        }))
+        .sort((a, b) => a.dist - b.dist)
+        .slice(0, 20);
 
       if (hospitals.length === 0 && police.length === 0) {
         // Places API returned nothing — use Overpass real data
@@ -715,26 +801,25 @@ function fetchNearbyServices(lat, lng, radius = 10000) {
       });
     }
 
-    // Search hospitals + clinics together for broader results
+    // Search 1: type="hospital" — finds all hospitals registered on Google Maps
     placesService.nearbySearch(
-      { location: { lat, lng }, radius, keyword: "hospital medical" },
+      { location: { lat, lng }, radius, type: "hospital" },
       (results, status) => {
-        if (status === google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
-          hospitalsResult = results;
-        } else {
-          // fallback: plain type search
-          placesService.nearbySearch(
-            { location: { lat, lng }, radius, type: "hospital" },
-            (r2, s2) => {
-              hospitalsResult = s2 === google.maps.places.PlacesServiceStatus.OK ? r2 : [];
-              checkDone();
-            }
-          );
-          return;
-        }
+        hospitalsTypeResult = status === google.maps.places.PlacesServiceStatus.OK ? results : [];
         checkDone();
       },
     );
+
+    // Search 2: keyword search — specifically targets big multispecialty/emergency hospitals
+    placesService.nearbySearch(
+      { location: { lat, lng }, radius, keyword: "multispecialty hospital emergency trauma" },
+      (results, status) => {
+        hospitalsKwResult = status === google.maps.places.PlacesServiceStatus.OK ? results : [];
+        checkDone();
+      },
+    );
+
+    // Search 3: police stations
     placesService.nearbySearch(
       { location: { lat, lng }, radius, type: "police" },
       (results, status) => {
@@ -758,6 +843,11 @@ async function fetchOverpassServices(lat, lng, radius = 10000) {
       relation["amenity"="hospital"](around:${radius},${lat},${lng});
       node["healthcare"="hospital"](around:${radius},${lat},${lng});
       way["healthcare"="hospital"](around:${radius},${lat},${lng});
+      node["healthcare"="emergency"](around:${radius},${lat},${lng});
+      way["healthcare"="emergency"](around:${radius},${lat},${lng});
+      node["emergency"="yes"]["amenity"="hospital"](around:${radius},${lat},${lng});
+      node["hospital"="yes"](around:${radius},${lat},${lng});
+      way["hospital"="yes"](around:${radius},${lat},${lng});
       node["amenity"="clinic"](around:${radius},${lat},${lng});
       way["amenity"="clinic"](around:${radius},${lat},${lng});
       node["healthcare"="clinic"](around:${radius},${lat},${lng});
@@ -789,6 +879,13 @@ async function fetchOverpassServices(lat, lng, radius = 10000) {
       const healthcareTag = el.tags?.healthcare || "";
       const facilityType = amenityTag || healthcareTag || "";
 
+      // Priority: amenity=hospital > healthcare=hospital/emergency > clinic > doctors
+      function overpassHospitalPriority(amenity, healthcare) {
+        if (amenity === "hospital") return 0;
+        if (healthcare === "hospital" || healthcare === "emergency") return 1;
+        if (amenity === "clinic"  || healthcare === "clinic") return 2;
+        return 3;
+      }
       const item = {
         id: el.id,
         name:
@@ -814,6 +911,7 @@ async function fetchOverpassServices(lat, lng, radius = 10000) {
           "",
         type: facilityType,
         dist: getDistanceKm(lat, lng, elLat, elLng),
+        _priority: overpassHospitalPriority(amenityTag, healthcareTag),
       };
       // Skip entries with no name (unimportant unnamed nodes)
       if (!item.name) return;
@@ -828,13 +926,14 @@ async function fetchOverpassServices(lat, lng, radius = 10000) {
       }
     });
 
-    hospitals.sort((a, b) => a.dist - b.dist);
+    // Sort hospitals: big hospitals (amenity=hospital) first, then by distance
+    hospitals.sort((a, b) => (a._priority - b._priority) || (a.dist - b.dist));
     police.sort((a, b) => a.dist - b.dist);
     // Filter out entries with no useful name, keep proper facilities
     const knownHospitals = hospitals.filter(h => h.name && h.name !== "Unknown Facility");
     const knownPolice = police.filter(p => p.name && p.name !== "Unknown Facility");
-    // If we have named ones, prefer them; otherwise use all
-    state.hospitals = (knownHospitals.length > 0 ? knownHospitals : hospitals).slice(0, 20);
+    // If we have named ones, prefer them; otherwise use all — limit increased to 30
+    state.hospitals = (knownHospitals.length > 0 ? knownHospitals : hospitals).slice(0, 30);
     state.policeStations = (knownPolice.length > 0 ? knownPolice : police).slice(0, 20);
     applyFacilityResults();
   } catch (err) {
@@ -1045,6 +1144,7 @@ async function updateLiveNavPanel() {
     updateNavHUD(destName, "0 m", "0 min", "🎯 You have arrived!");
     clearRoutePolyline();
     showToast(`🎯 Arrived at ${destName}!`, "success", 6000);
+    sendBrowserNotif("🎯 Arrived!", `You have arrived at ${destName}.`);
     navState.active = false;
     return;
   }
@@ -1455,6 +1555,10 @@ sosAlarm.loop = true;
 let sosAlarmKeepAlive = null;
 
 function playSosAlarm() {
+  // Respect SOS Sound setting
+  const sosSoundEl = document.getElementById("sosSoundToggle");
+  if (sosSoundEl && !sosSoundEl.checked) return;
+
   sosAlarm.currentTime = 0;
   sosAlarm.play().catch(e => console.warn("Audio play blocked:", e));
 
@@ -1534,6 +1638,7 @@ async function triggerSOS() {
 
   playSosAlarm();
   showToast("🚨 SOS ALERT SENT! Emergency services notified!", "error", 8000);
+  sendBrowserNotif("🚨 SOS ALERT SENT", `Emergency triggered by ${CURRENT_USER?.name || "Unknown"} at ${state.lat.toFixed(5)}, ${state.lng.toFixed(5)}`);
   DOM.sosBanner.classList.add("danger");
   DOM.sosBanner.style.display = "flex";
 
@@ -1642,6 +1747,16 @@ setInterval(() => {
   DOM.updateTimeAgo.textContent = diff < 10 ? "just now" : `${diff}s ago`;
 }, 5000);
 
+// ─── Browser Notification Helper ────────────────────────────
+function sendBrowserNotif(title, body) {
+  const notifToggle = document.getElementById("browserNotifToggle");
+  if (!notifToggle || !notifToggle.checked) return;
+  if (Notification.permission === "granted") {
+    new Notification(title, { body, icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🆘</text></svg>" });
+  }
+}
+window.sendBrowserNotif = sendBrowserNotif;
+
 // ─── Settings Modal + Theme Toggle ────────────────────────────
 (function () {
   const overlay      = document.getElementById("settingsOverlay");
@@ -1686,6 +1801,85 @@ setInterval(() => {
   // Theme buttons
   themeDarkBtn.addEventListener("click",  () => applyTheme("dark"));
   themeLightBtn.addEventListener("click", () => applyTheme("light"));
+
+  // ── SOS Sound Alert Toggle ────────────────────────────────────
+  const sosSoundToggle = document.getElementById("sosSoundToggle");
+  const savedSosSound = localStorage.getItem("seap_sosSound");
+  if (savedSosSound === "false") sosSoundToggle.checked = false;
+  sosSoundToggle.addEventListener("change", () => {
+    localStorage.setItem("seap_sosSound", sosSoundToggle.checked);
+    if (!sosSoundToggle.checked && state.sosActive) {
+      stopSosAlarm();
+    }
+    showToast(
+      sosSoundToggle.checked ? "🔔 SOS sound alert enabled" : "🔕 SOS sound alert disabled",
+      sosSoundToggle.checked ? "success" : "info",
+      2000
+    );
+  });
+
+  // ── Browser Notifications Toggle ─────────────────────────────
+  const browserNotifToggle = document.getElementById("browserNotifToggle");
+  const savedBrowserNotif = localStorage.getItem("seap_browserNotif");
+  // Restore saved state
+  if (savedBrowserNotif === "true" && Notification.permission === "granted") {
+    browserNotifToggle.checked = true;
+  } else {
+    browserNotifToggle.checked = false;
+  }
+  browserNotifToggle.addEventListener("change", async () => {
+    if (browserNotifToggle.checked) {
+      if (!("Notification" in window)) {
+        showToast("Browser notifications not supported", "warning", 3000);
+        browserNotifToggle.checked = false;
+        return;
+      }
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        browserNotifToggle.checked = false;
+        localStorage.setItem("seap_browserNotif", "false");
+        showToast("❌ Notification permission denied", "warning", 3000);
+        return;
+      }
+      localStorage.setItem("seap_browserNotif", "true");
+      showToast("📳 Browser notifications enabled", "success", 2000);
+      new Notification("SEAP Alerts Active", {
+        body: "You will now receive desktop alerts for SOS and key events.",
+        icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🆘</text></svg>"
+      });
+    } else {
+      localStorage.setItem("seap_browserNotif", "false");
+      showToast("Browser notifications disabled", "info", 2000);
+    }
+  });
+
+  // ── Auto Refresh Toggle ───────────────────────────────────────
+  const autoRefreshToggle = document.getElementById("autoRefreshToggle");
+  const savedAutoRefresh = localStorage.getItem("seap_autoRefresh");
+  if (savedAutoRefresh === "false") {
+    autoRefreshToggle.checked = false;
+    // Stop the interval that was started in initMap
+    if (iotFetchInterval) {
+      clearInterval(iotFetchInterval);
+      iotFetchInterval = null;
+    }
+  }
+  autoRefreshToggle.addEventListener("change", () => {
+    localStorage.setItem("seap_autoRefresh", autoRefreshToggle.checked);
+    if (autoRefreshToggle.checked) {
+      if (!iotFetchInterval) {
+        fetchIoTLocation();
+        iotFetchInterval = setInterval(fetchIoTLocation, 3000);
+      }
+      showToast("🔄 Auto refresh enabled", "success", 2000);
+    } else {
+      if (iotFetchInterval) {
+        clearInterval(iotFetchInterval);
+        iotFetchInterval = null;
+      }
+      showToast("⏸ Auto refresh paused", "info", 2000);
+    }
+  });
 
   // ── Map style switcher (called after map is ready) ────────────
   function updateMapTheme(theme) {

@@ -92,9 +92,9 @@
           <span style="color: var(--text-muted); font-size: 0.75rem">▾</span>
 
           <div class="user-dropdown">
-            <div class="dropdown-item">
-              <span>👤</span> <span id="dropdownUserName">Profile</span>
-            </div>
+            <a href="profile.html" class="dropdown-item">
+              <span>👤</span> <span id="dropdownUserName">My Profile</span>
+            </a>
             <div class="dropdown-item" id="openSettingsBtn">
               <span>⚙</span> <span>Settings</span>
             </div>
@@ -302,6 +302,7 @@
                 🚔 POLICE
               </button>
             </div>
+
           </div>
           <div style="display: flex; gap: 8px; align-items: center">
             <button
@@ -413,7 +414,7 @@
           <div class="map-stat">
             <span class="map-stat-icon">📍</span>
             <span>Search Radius: </span>
-            <span class="map-stat-value">10 km</span>
+            <span class="map-stat-value" id="searchRadiusDisplay">10 km</span>
           </div>
           <div class="map-stat" style="margin-left: auto">
             <span class="map-stat-icon">🌐</span>
@@ -579,6 +580,22 @@
                 <input type="checkbox" id="autoRefreshToggle" checked />
                 <span class="toggle-track"><span class="toggle-thumb"></span></span>
               </label>
+            </div>
+
+            <!-- Search Radius -->
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-icon">📡</span>
+                <div>
+                  <div class="settings-row-title">Search Radius</div>
+                  <div class="settings-row-desc">Radius to scan for hospitals &amp; police</div>
+                </div>
+              </div>
+              <div class="radius-stepper">
+                <button class="radius-step-btn" id="radiusDecBtn">−</button>
+                <span class="radius-step-val" id="radiusStepDisplay">10 km</span>
+                <button class="radius-step-btn" id="radiusIncBtn">+</button>
+              </div>
             </div>
           </div>
 

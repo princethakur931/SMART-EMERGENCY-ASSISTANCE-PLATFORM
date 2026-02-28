@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SEAP — My Profile</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🆘</text></svg>"
+    />
+    <link rel="stylesheet" href="css/global.css" />
+    <link rel="stylesheet" href="css/profile.css" />
+  </head>
+  <body>
+    <!-- Background -->
+    <div class="grid-bg"></div>
+    <div class="scanlines"></div>
+    <div class="corner-decor top-left"></div>
+    <div class="corner-decor top-right"></div>
+    <div class="corner-decor bottom-left"></div>
+    <div class="corner-decor bottom-right"></div>
+
+    <!-- Toast -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- ═══ TOP NAV ══════════════════════════════════════════════ -->
+    <nav class="topbar">
+      <div class="topbar-left">
+        <a href="dashboard.html" class="topbar-logo">
+          <div class="topbar-logo-icon">🆘</div>
+          <div>
+            <div class="topbar-title">S.E.A.P</div>
+            <div class="topbar-subtitle">Emergency Platform</div>
+          </div>
+        </a>
+        <div class="topbar-breadcrumb">
+          <span class="breadcrumb-item">SYSTEM</span>
+          <span class="breadcrumb-sep">›</span>
+          <a href="dashboard.html" class="breadcrumb-item breadcrumb-link">DASHBOARD</a>
+          <span class="breadcrumb-sep">›</span>
+          <span class="breadcrumb-item active">MY PROFILE</span>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <div class="topbar-clock" id="topbarClock">00:00:00</div>
+        <div class="user-menu" id="userMenuBtn">
+          <div class="user-avatar" id="userAvatarInitials">?</div>
+          <span class="user-name" id="userMenuName">Loading...</span>
+          <span style="color:var(--text-muted);font-size:0.75rem">▾</span>
+          <div class="user-dropdown">
+            <a href="profile.html" class="dropdown-item active-page">
+              <span>👤</span> <span>My Profile</span>
+            </a>
+            <div class="dropdown-item" id="openSettingsBtn" style="cursor:pointer">
+              <span>⚙</span> <span>Settings</span>
+            </div>
+            <div class="dropdown-divider"></div>
+            <button type="button" class="dropdown-item logout" id="logoutBtn">
+              <span>🔓</span> <span>Logout</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <!-- ═══ MAIN CONTENT ═════════════════════════════════════════ -->
+    <main class="profile-main">
+
+      <!-- ── Page Title ── -->
+      <div class="profile-page-header">
+        <div class="profile-page-title">
+          <div class="page-title-icon">👤</div>
+          <div>
+            <h1 class="page-title-text">MY PROFILE</h1>
+            <p class="page-title-sub">Manage your personal information and documents</p>
+          </div>
+        </div>
+        <a href="dashboard.html" class="back-btn">← Back to Dashboard</a>
+      </div>
+
+      <!-- ── Hero Banner ── -->
+      <div class="profile-hero">
+        <div class="profile-hero-top-line"></div>
+        <div class="profile-hero-body">
+
+          <!-- Big Avatar -->
+          <div class="hero-avatar-wrap" id="heroAvatarWrap" title="Click to change photo">
+            <div class="hero-avatar-ring">
+              <div class="hero-avatar-inner">
+                <img id="heroAvatarImg" src="" alt="" style="display:none" />
+                <div id="heroAvatarInitials" class="hero-avatar-initials">?</div>
+              </div>
+            </div>
+            <div class="hero-avatar-edit-overlay">
+              <span>📷</span>
+              <span>CHANGE</span>
+            </div>
+          </div>
+
+          <!-- Name / Email / Badges -->
+          <div class="hero-info">
+            <h2 class="hero-name" id="heroName">—</h2>
+            <p class="hero-email" id="heroEmail">—</p>
+            <div class="hero-badge-row">
+              <span class="hero-badge online">● ONLINE</span>
+            </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="hero-actions">
+            <button class="hero-change-photo-btn" id="changePhotoBtn">📷 Change Photo</button>
+            <button class="hero-remove-photo-btn" id="removePhotoBtn" style="display:none">✕ Remove Photo</button>
+          </div>
+
+          <input type="file" id="photoInput" accept="image/*" style="display:none" />
+        </div>
+      </div>
+
+      <!-- ── Two Column Grid ── -->
+      <div class="profile-grid">
+
+        <!-- ══ LEFT COLUMN — Identity ═══════════════════════════ -->
+        <div>
+          <div class="profile-card">
+            <div class="profile-card-top-line"></div>
+            <div class="card-header">
+              <span class="card-header-icon">🪪</span>
+              <span class="card-header-title">IDENTITY</span>
+            </div>
+
+            <div class="form-section">
+
+              <!-- Display Name -->
+              <div class="form-group">
+                <label class="form-label">DISPLAY NAME</label>
+                <div class="input-wrapper">
+                  <span class="input-icon">👤</span>
+                  <input type="text" id="nameInput" class="profile-input" placeholder="Enter your full name" />
+                </div>
+              </div>
+
+              <!-- Address -->
+              <div class="form-group">
+                <label class="form-label">ADDRESS</label>
+                <div class="input-wrapper textarea-wrapper">
+                  <span class="input-icon">📍</span>
+                  <textarea id="addressInput" class="profile-input profile-textarea" placeholder="Enter your full address&#10;e.g. Flat 3B, Sunshine Apartments, MG Road, Mumbai - 400001" rows="2"></textarea>
+                </div>
+              </div>
+
+              <!-- Phone -->
+              <div class="form-group">
+                <label class="form-label">PHONE NUMBER</label>
+                <div class="input-wrapper">
+                  <span class="input-icon">📞</span>
+                  <input type="tel" id="phoneInput" class="profile-input" placeholder="+91 XXXXX XXXXX" />
+                </div>
+              </div>
+
+              <!-- Emergency Contact -->
+              <div class="form-group">
+                <label class="form-label">EMERGENCY CONTACT</label>
+                <div class="input-wrapper">
+                  <span class="input-icon">🚨</span>
+                  <input type="text" id="emergencyContactInput" class="profile-input" placeholder="Name — Phone Number" />
+                </div>
+              </div>
+
+            </div><!-- /form-section -->
+
+            <div class="save-btn-wrap">
+              <button type="button" class="save-btn" id="saveProfileBtn">
+                <span>💾</span> SAVE PROFILE
+              </button>
+            </div>
+          </div>
+
+          <!-- Account Info Card -->
+          <div class="profile-card">
+            <div class="profile-card-top-line"></div>
+            <div class="card-header">
+              <span class="card-header-icon">🔐</span>
+              <span class="card-header-title">ACCOUNT INFO</span>
+            </div>
+            <div class="acct-stats-grid">
+              <div class="acct-stat-box">
+                <div class="acct-stat-icon">📧</div>
+                <div class="acct-stat-label">EMAIL</div>
+                <div class="acct-stat-value acct-email" id="infoEmail">—</div>
+              </div>
+              <div class="acct-stat-box">
+                <div class="acct-stat-icon">📅</div>
+                <div class="acct-stat-label">MEMBER SINCE</div>
+                <div class="acct-stat-value" id="infoMemberSince">—</div>
+              </div>
+              <div class="acct-stat-box acct-stat-cyan">
+                <div class="acct-stat-icon">📋</div>
+                <div class="acct-stat-label">DOCUMENTS</div>
+                <div class="acct-stat-value" id="infoDocCount">0 files</div>
+              </div>
+              <div class="acct-stat-box acct-stat-purple">
+                <div class="acct-stat-icon">💾</div>
+                <div class="acct-stat-label">STORAGE USED</div>
+                <div class="acct-stat-value" id="infoStorage">0 KB</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ══ RIGHT COLUMN — Documents ═════════════ -->
+        <div>
+
+          <!-- Documents Card -->
+          <div class="profile-card">
+            <div class="profile-card-top-line"></div>
+            <div class="card-header">
+              <span class="card-header-icon">📁</span>
+              <span class="card-header-title">DOCUMENTS</span>
+              <span class="doc-count-badge" id="docCountBadge">0</span>
+            </div>
+
+            <!-- Hidden file input (outside zone to avoid click conflicts) -->
+            <input type="file" id="docFileInput" style="display:none" />
+
+            <!-- Upload Zone -->
+            <div class="upload-zone" id="uploadZone">
+              <div class="upload-zone-inner">
+                <span class="upload-big-icon">📤</span>
+                <p class="upload-title">Drag &amp; Drop a Document</p>
+                <p class="upload-sub">PDF, Image, Word, or any file up to 10 MB</p>
+                <div class="upload-drag-hint"><span></span>or<span></span></div>
+              </div>
+              <div style="display:flex;justify-content:center;padding:0 20px 22px;">
+                <button type="button" class="choose-file-btn" id="chooseFileBtn">📂 Choose File</button>
+              </div>
+            </div>
+
+            <!-- Selected file preview + label input -->
+            <div class="doc-upload-form" id="docUploadForm" style="display:none">
+              <div class="selected-file-card" id="selectedFileCard"></div>
+              <div class="form-group" style="margin-top:12px">
+                <label class="form-label">DOCUMENT LABEL <span style="color:var(--primary)">(you decide)</span></label>
+                <div class="input-wrapper">
+                  <span class="input-icon">🏷️</span>
+                  <input type="text" id="docLabelInput" class="profile-input" placeholder="e.g. Aadhar Card, PAN Card, Driving Licence, Insurance..." />
+                </div>
+              </div>
+              <div class="upload-actions">
+                <button class="cancel-upload-btn" id="cancelUploadBtn">✕ Cancel</button>
+                <button class="confirm-upload-btn" id="confirmUploadBtn">
+                  <span>📤</span> Upload Document
+                </button>
+              </div>
+            </div>
+
+            <!-- Documents List -->
+            <div class="docs-list" id="docsList">
+              <div class="docs-empty" id="docsEmpty">
+                <span class="docs-empty-icon">📋</span>
+                <p>No documents uploaded yet</p>
+                <p>Upload IDs, medical records, insurance papers etc.</p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </main>
+
+    <!-- ═══ SETTINGS MODAL ═══════════════════════════════════ -->
+    <div class="settings-overlay" id="settingsOverlay">
+      <div class="settings-modal">
+        <div class="settings-header">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:1.2rem">⚙</span>
+            <span class="settings-title">SETTINGS</span>
+          </div>
+          <button type="button" class="settings-close" id="closeSettingsBtn">✕</button>
+        </div>
+        <div class="settings-body">
+          <div class="settings-section">
+            <div class="settings-section-label">APPEARANCE</div>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-icon">🎨</span>
+                <div>
+                  <div class="settings-row-title">Theme</div>
+                  <div class="settings-row-desc">Switch between Dark and Light mode</div>
+                </div>
+              </div>
+              <div class="theme-toggle-group">
+                <button type="button" class="theme-btn active" data-theme="dark" id="themeDarkBtn">🌙 Dark</button>
+                <button type="button" class="theme-btn" data-theme="light" id="themeLightBtn">☀️ Light</button>
+              </div>
+            </div>
+          </div>
+          <div class="settings-section">
+            <div class="settings-section-label">ACCOUNT</div>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-icon">🗑</span>
+                <div>
+                  <div class="settings-row-title">Clear All Documents</div>
+                  <div class="settings-row-desc">Remove all uploaded documents from storage</div>
+                </div>
+              </div>
+              <button type="button" class="settings-danger-btn" id="clearDocsBtn">Clear</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="js/auth.js"></script>
+    <script src="js/profile.js"></script>
+  </body>
+</html>
