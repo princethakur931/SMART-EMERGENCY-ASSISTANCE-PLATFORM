@@ -1553,6 +1553,47 @@ document.getElementById("btnFullscreen").addEventListener("click", () => {
   }
 });
 
+// ─── Send SMS to Emergency Contact ───────────────────────────
+async function sendEmergencyContactSMS() {
+  try {
+    // Fetch emergency contact from profile
+    const res     = await fetch(`/api/profile/${CURRENT_USER?.id}`);
+    const data    = await res.json();
+    const profile = data?.profile || {};
+    const ecPhone = profile.emergencyContactPhone || "";
+    const ecName  = profile.emergencyContactName  || "Emergency Contact";
+
+    if (!ecPhone) {
+      showToast("⚠️ No emergency contact set. Add one in Profile → Emergency Contact.", "warning", 7000);
+      return;
+    }
+
+    const locationUrl  = `https://maps.google.com/?q=${state.lat.toFixed(6)},${state.lng.toFixed(6)}`;
+    const smsBody      = `🚨 SOS ALERT! ${CURRENT_USER?.name || "Someone"} needs IMMEDIATE help!\nLocation: ${locationUrl}\nTime: ${new Date().toLocaleString("en-IN")}`;
+
+    // Ask server to send via Twilio (if configured)
+    const smsRes  = await fetch("/api/send-sms", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to: ecPhone, message: smsBody }),
+    });
+    const smsData = await smsRes.json();
+
+    if (smsData.success && smsData.provider === "twilio") {
+      showToast(`📱 SMS alert sent to ${ecName} (${ecPhone})!`, "success", 6000);
+    } else if (smsData.success && smsData.smsUri) {
+      // No Twilio — open native SMS app on mobile as fallback
+      showToast(`📱 Opening SMS to ${ecName} (${ecPhone})…`, "info", 5000);
+      setTimeout(() => { window.open(smsData.smsUri, "_blank"); }, 600);
+    } else {
+      showToast(`⚠️ SMS to ${ecName} failed. Please call manually: ${ecPhone}`, "warning", 8000);
+    }
+  } catch (err) {
+    console.warn("sendEmergencyContactSMS error:", err);
+    showToast("⚠️ Could not send SMS alert to emergency contact.", "warning", 5000);
+  }
+}
+
 // ─── SOS Alarm Audio ─────────────────────────────────────────
 const sosAlarm = new Audio("/sos-alarm.mp3");
 sosAlarm.loop = true;
@@ -1629,6 +1670,7 @@ async function triggerSOS() {
   DOM.sosBanner.classList.add("danger");
   DOM.sosBanner.style.display = "flex";
 
+  // ─── Log SOS to backend ────────────────────────────────────
   try {
     await fetch("/api/sos", {
       method: "POST",
@@ -1643,6 +1685,9 @@ async function triggerSOS() {
   } catch (err) {
     console.warn("SOS backend error:", err);
   }
+
+  // ─── Send SMS to Emergency Contact ─────────────────────────
+  sendEmergencyContactSMS();
 
   const logEntry = {
     id: Date.now(),

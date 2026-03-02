@@ -5,6 +5,63 @@ const bodyParser = require("body-parser");
 const path = require("path");
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
+const https = require("https");
+
+// ─── AI Agent (LongCat AI) ───────────────────────────────────────────────────
+// Uses LongCat's OpenAI-compatible API — no extra npm package needed
+// Endpoint: https://api.longcat.chat/openai/v1/chat/completions
+const aiAgentKey = process.env.AI_AGENT_KEY;
+
+if (aiAgentKey) {
+  console.log("\x1b[32m%s\x1b[0m", "[AI Agent] LongCat AI agent initialized ✓");
+} else {
+  console.warn("[AI Agent] AI_AGENT_KEY not set — auto-reply disabled");
+}
+
+/**
+ * Send a prompt to LongCat AI and get a text reply.
+ * @param {string} prompt
+ * @returns {Promise<string>}
+ */
+function longcatChat(prompt) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({
+      model: "LongCat-Flash-Chat",
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 300,
+      temperature: 0.7,
+    });
+
+    const options = {
+      hostname: "api.longcat.chat",
+      path: "/openai/v1/chat/completions",
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${aiAgentKey}`,
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(body),
+      },
+    };
+
+    const req = https.request(options, (res) => {
+      let data = "";
+      res.on("data", chunk => (data += chunk));
+      res.on("end", () => {
+        try {
+          const json = JSON.parse(data);
+          const text = json?.choices?.[0]?.message?.content || "";
+          resolve(text.trim());
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+
+    req.on("error", reject);
+    req.write(body);
+    req.end();
+  });
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -34,11 +91,16 @@ const sosSchema = new mongoose.Schema({
 });
 
 const userProfileSchema = new mongoose.Schema({
-  userId:           { type: String, required: true, unique: true },
-  address:          { type: String, default: "" },
-  phone:            { type: String, default: "" },
-  emergencyContact: { type: String, default: "" },
-  memberSince:      { type: Date,   default: Date.now },
+  userId:                  { type: String, required: true, unique: true },
+  address:                 { type: String, default: "" },
+  phone:                   { type: String, default: "" },
+  age:                     { type: String, default: "" },
+  gender:                  { type: String, default: "" },
+  bloodGroup:              { type: String, default: "" },
+  emergencyContact:        { type: String, default: "" },  // legacy
+  emergencyContactName:    { type: String, default: "" },
+  emergencyContactPhone:   { type: String, default: "" },
+  memberSince:             { type: Date,   default: Date.now },
   photo:            { type: String, default: null },   // base64 data URL
   documents:        [{
     id:         { type: String },
@@ -56,7 +118,8 @@ const SOS         = mongoose.model("SOS",         sosSchema);
 const UserProfile = mongoose.model("UserProfile", userProfileSchema);
 
 app.use(cors());
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '25mb' }));
+app.use(bodyParser.urlencoded({ limit: '25mb', extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
 // ─── IoT Device Simulation ────────────────────────────────────────────────────
@@ -217,8 +280,10 @@ app.get("/api/profile/:userId", async (req, res) => {
 // POST save/update profile info
 app.post("/api/profile/:userId", async (req, res) => {
   try {
-    const { address, phone, emergencyContact, name } = req.body;
-    const update = { address, phone, emergencyContact };
+    const { address, phone, emergencyContact, emergencyContactName, emergencyContactPhone, name, age, gender, bloodGroup } = req.body;
+    const update = { address, phone, emergencyContact, emergencyContactName, emergencyContactPhone, age, gender, bloodGroup };
+    // Remove undefined fields to avoid overwriting with null
+    Object.keys(update).forEach(k => update[k] === undefined && delete update[k]);
     const profile = await UserProfile.findOneAndUpdate(
       { userId: req.params.userId },
       { $set: update, $setOnInsert: { memberSince: new Date() } },
@@ -231,6 +296,159 @@ app.post("/api/profile/:userId", async (req, res) => {
     res.json({ success: true, profile });
   } catch (err) {
     res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+// ─── Twilio Incoming SMS Webhook ────────────────────────────────────────────
+// Configure this URL in your Twilio phone number settings:
+//   When a Message Comes In → POST → https://<your-domain>/sms/incoming
+//
+// Twilio sends form-encoded body with fields: From, To, Body, etc.
+app.post("/sms/incoming", express.urlencoded({ extended: false }), async (req, res) => {
+  const from    = req.body.From    || "Unknown";
+  const to      = req.body.To      || "";
+  const msgBody = req.body.Body    || "";
+
+  console.log("\x1b[35m%s\x1b[0m", `[SMS Incoming] From: ${from} | Message: ${msgBody}`);
+
+  // ── Look up who this emergency contact belongs to ─────────────────────────
+  let userName        = "the person in distress";
+  let ecName          = "Emergency Contact";
+  let locationStr     = "unknown location";
+  let locationUrl     = "";
+  let matchedUserId   = null;
+
+  try {
+    // Normalise phone: strip spaces/dashes for comparison
+    const normalise = p => (p || "").replace(/[\s\-().]/g, "");
+    const fromNorm  = normalise(from);
+
+    // Find the UserProfile whose emergencyContactPhone matches the sender
+    const allProfiles = await UserProfile.find({
+      emergencyContactPhone: { $exists: true, $ne: "" },
+    }).lean();
+
+    const matchedProfile = allProfiles.find(p => {
+      return normalise(p.emergencyContactPhone) === fromNorm;
+    });
+
+    if (matchedProfile) {
+      matchedUserId = matchedProfile.userId;
+      ecName        = matchedProfile.emergencyContactName || ecName;
+
+      // Get the user's name from User collection
+      const user = await User.findById(matchedUserId).lean().catch(() => null);
+      if (user) userName = user.name;
+
+      // Get latest SOS record for this user to retrieve location
+      const latestSOS = await SOS.findOne({ userId: matchedUserId })
+        .sort({ timestamp: -1 })
+        .lean()
+        .catch(() => null);
+
+      if (latestSOS && latestSOS.lat && latestSOS.lng) {
+        locationStr = `${latestSOS.lat.toFixed(5)}, ${latestSOS.lng.toFixed(5)}`;
+        locationUrl = `https://maps.google.com/?q=${latestSOS.lat.toFixed(6)},${latestSOS.lng.toFixed(6)}`;
+      }
+
+      console.log("\x1b[35m%s\x1b[0m",
+        `[SMS Incoming] Matched user: ${userName} | EC: ${ecName} | Location: ${locationStr}`);
+    } else {
+      console.log("\x1b[33m%s\x1b[0m", `[SMS Incoming] No matching profile found for sender ${from}`);
+    }
+  } catch (e) {
+    console.error("[SMS Incoming] Profile lookup error:", e.message);
+  }
+
+  // ── Save incoming SMS to SOS log so it appears in the dashboard ──────────
+  try {
+    await SOS.create({
+      userId: matchedUserId || `sms:${from}`,
+      message: `[REPLY from ${ecName} (${from})]: ${msgBody}`,
+      status: "reply_received",
+    });
+  } catch (e) {
+    console.error("[SMS Incoming] DB log error:", e.message);
+  }
+
+  // ── Generate AI reply via LongCat AI ──────────────────────────────────────
+  let aiReply = `Thank you ${ecName}. ${userName}'s location: ${locationUrl || locationStr}. Emergency services notified. Please stay calm and await further updates.`;
+
+  if (aiAgentKey) {
+    try {
+      const prompt = `You are an AI emergency response agent for a Smart Emergency Assistance Platform (SEAP).
+
+CONTEXT:
+- Person in distress (SOS sender): ${userName}
+- Their last known location: ${locationStr}${locationUrl ? ` — Google Maps: ${locationUrl}` : ""}
+- Emergency contact name: ${ecName}
+- Emergency contact phone: ${from}
+- Their reply message: "${msgBody}"
+
+Your task:
+- Analyse the emergency contact's reply carefully.
+- Generate a concise, calm, reassuring SMS reply (max 280 characters) that:
+  1. Addresses them by name (${ecName}).
+  2. Mentions ${userName}'s name so they know this is about them.
+  3. Shares the location link if available so they can navigate there.
+  4. Reassures them that help is being coordinated.
+  5. Provides a clear next step (e.g., go to location, call 112, stay on line).
+- Do NOT include headers, labels, or quotation marks — output only the reply text itself.`;
+
+      const text = await longcatChat(prompt);
+      if (text) aiReply = text.substring(0, 320); // stay within SMS limits
+      console.log("\x1b[32m%s\x1b[0m", `[AI Agent] LongCat reply: ${aiReply}`);
+    } catch (err) {
+      console.error("[AI Agent] LongCat error:", err.message);
+    }
+  }
+
+  // ── Respond with TwiML so Twilio sends the AI reply back as an SMS ────────
+  res.set("Content-Type", "text/xml");
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Message>${aiReply.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</Message>
+</Response>`);
+});
+
+// POST send SMS alert to emergency contact
+// Uses Twilio if credentials are in .env, otherwise logs to console
+app.post("/api/send-sms", async (req, res) => {
+  try {
+    let { to, message } = req.body;
+    if (!to || !message) {
+      return res.status(400).json({ success: false, message: "'to' and 'message' are required" });
+    }
+
+    // Normalise phone number to E.164 format (+91XXXXXXXXXX)
+    to = to.replace(/[\s\-().]/g, "");          // remove spaces, dashes, brackets
+    if (!to.startsWith("+")) to = "+91" + to;   // add +91 if missing
+
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
+    const authToken  = process.env.TWILIO_AUTH_TOKEN;
+    const fromNumber = process.env.TWILIO_FROM_NUMBER;
+
+    if (accountSid && authToken && fromNumber) {
+      // Twilio integration (install with: npm install twilio)
+      let twilioClient;
+      try { twilioClient = require("twilio")(accountSid, authToken); }
+      catch(e) {
+        console.error("[SMS] Twilio creds found but package not installed. Run: npm install twilio");
+        const smsUri = `sms:${to}?body=${encodeURIComponent(message)}`;
+        return res.json({ success: true, provider: "none", smsUri });
+      }
+      const msg = await twilioClient.messages.create({ body: message, from: fromNumber, to });
+      console.log("\x1b[32m%s\x1b[0m", `[SMS] Sent via Twilio → SID: ${msg.sid} | To: ${to}`);
+      return res.json({ success: true, provider: "twilio", sid: msg.sid });
+    } else {
+      // No Twilio credentials — log and return sms-uri for client fallback
+      console.log("\x1b[33m%s\x1b[0m", `[SMS] (No Twilio creds) Would send to ${to}: ${message}`);
+      const smsUri = `sms:${to}?body=${encodeURIComponent(message)}`;
+      return res.json({ success: true, provider: "none", smsUri });
+    }
+  } catch (err) {
+    console.error("[SMS Error]", err.message);
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 

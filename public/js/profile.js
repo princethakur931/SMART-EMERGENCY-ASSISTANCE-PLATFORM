@@ -9,7 +9,7 @@
 const CURRENT_USER = requireAuth();
 
 // ─── API Helpers ─────────────────────────────────────────────
-let profileCache = { address: "", phone: "", emergencyContact: "", memberSince: null, photo: null, documents: [] };
+let profileCache = { address: "", phone: "", age: "", gender: "", bloodGroup: "", emergencyContactName: "", emergencyContactPhone: "", memberSince: null, photo: null, documents: [] };
 
 async function apiGetProfile() {
   try {
@@ -17,12 +17,16 @@ async function apiGetProfile() {
     const data = await res.json();
     if (data.success && data.profile) {
       profileCache = {
-        address:          data.profile.address          || "",
-        phone:            data.profile.phone            || "",
-        emergencyContact: data.profile.emergencyContact || "",
-        memberSince:      data.profile.memberSince      || null,
-        photo:            data.profile.photo            || null,
-        documents:        data.profile.documents        || [],
+        address:                data.profile.address                || "",
+        phone:                  data.profile.phone                  || "",
+        age:                    data.profile.age                    || "",
+        gender:                 data.profile.gender                 || "",
+        bloodGroup:             data.profile.bloodGroup             || "",
+        emergencyContactName:   data.profile.emergencyContactName   || "",
+        emergencyContactPhone:  data.profile.emergencyContactPhone  || "",
+        memberSince:            data.profile.memberSince            || null,
+        photo:                  data.profile.photo                  || null,
+        documents:              data.profile.documents              || [],
       };
     }
   } catch (err) { console.warn("apiGetProfile error:", err.message); }
@@ -95,6 +99,88 @@ function fileIcon(mimeType = "") {
   return "📁";
 }
 
+// ─── PDF first-page thumbnail via PDF.js ─────────────────────
+async function generatePdfThumbnail(dataUrl, canvas) {
+  try {
+    if (typeof pdfjsLib === "undefined") return;
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    const loadingTask = pdfjsLib.getDocument(dataUrl);
+    const pdf  = await loadingTask.promise;
+    const page = await pdf.getPage(1);
+    const viewport = page.getViewport({ scale: 1 });
+    // use higher scale for crisp render, then CSS scales it down
+    const scale  = Math.min(120 / viewport.width, 120 / viewport.height);
+    const scaled = page.getViewport({ scale });
+    canvas.width  = scaled.width;
+    canvas.height = scaled.height;
+    const ctx = canvas.getContext("2d");
+    // fill white so transparent PDF areas don't appear black
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, viewport: scaled, background: "white" }).promise;
+  } catch (e) { console.warn("PDF thumb error:", e.message); }
+}
+
+// ─── Open document in full-screen viewer ─────────────────────
+function openDocViewer(doc) {
+  const overlay = document.getElementById("docViewerOverlay");
+  const body    = document.getElementById("docViewerBody");
+  const title   = document.getElementById("docViewerTitle");
+  const dlBtn   = document.getElementById("docViewerDownload");
+
+  title.textContent = doc.label || doc.filename;
+  body.innerHTML = "";
+
+  if (doc.mimeType && doc.mimeType.startsWith("image/")) {
+    const img = document.createElement("img");
+    img.src = doc.data;
+    img.className = "doc-viewer-img";
+    body.appendChild(img);
+  } else if (doc.mimeType === "application/pdf") {
+    // Convert data URL to blob URL so iframe can load it
+    const byteStr = atob(doc.data.split(",")[1]);
+    const ab = new ArrayBuffer(byteStr.length);
+    const ia = new Uint8Array(ab);
+    for (let i = 0; i < byteStr.length; i++) ia[i] = byteStr.charCodeAt(i);
+    const blob    = new Blob([ab], { type: "application/pdf" });
+    const blobUrl = URL.createObjectURL(blob);
+    const iframe  = document.createElement("iframe");
+    iframe.src = blobUrl;
+    iframe.className = "doc-viewer-iframe";
+    body.appendChild(iframe);
+    // revoke after a moment
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+  } else {
+    body.innerHTML = `<div class="doc-viewer-nopreview">
+      <div style="font-size:3rem">${fileIcon(doc.mimeType)}</div>
+      <p>Preview not available for this file type.</p>
+      <button class="doc-viewer-btn" onclick="document.getElementById('docViewerDownload').click()">⬇ Download</button>
+    </div>`;
+  }
+
+  dlBtn.onclick = () => { const a = document.createElement("a"); a.href = doc.data; a.download = doc.filename; a.click(); };
+  overlay.classList.add("open");
+  document.body.style.overflow = "hidden";
+}
+
+// ─── Viewer close logic ───────────────────────────────────────
+(function initViewer() {
+  const overlay = document.getElementById("docViewerOverlay");
+  if (!overlay) return;
+  document.getElementById("docViewerClose").addEventListener("click", () => {
+    overlay.classList.remove("open"); document.body.style.overflow = "";
+  });
+  overlay.addEventListener("click", e => {
+    if (e.target === overlay) { overlay.classList.remove("open"); document.body.style.overflow = ""; }
+  });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && overlay.classList.contains("open")) {
+      overlay.classList.remove("open"); document.body.style.overflow = "";
+    }
+  });
+})();
+
 // ─── Format Bytes ─────────────────────────────────────────────
 function formatBytes(bytes) {
   if (bytes < 1024)       return bytes + " B";
@@ -143,7 +229,16 @@ async function init() {
   document.getElementById("nameInput").value              = user.name || "";
   document.getElementById("addressInput").value           = profile.address || "";
   document.getElementById("phoneInput").value             = profile.phone || "";
-  document.getElementById("emergencyContactInput").value  = profile.emergencyContact || "";
+  document.getElementById("ageInput").value               = profile.age || "";
+  document.getElementById("genderInput").value            = profile.gender || "";
+  document.getElementById("bloodGroupInput").value        = profile.bloodGroup || "";
+  /* Set identity inputs to readonly (view mode) */
+  setIdentityReadonly(true);
+
+  /* ── Emergency Contact ── */
+  document.getElementById("ecNameInput").value  = profile.emergencyContactName  || "";
+  document.getElementById("ecPhoneInput").value = profile.emergencyContactPhone || "";
+  setEcReadonly(true);
 
   /* ── Account info ── */
   document.getElementById("infoEmail").textContent       = user.email || "—";
@@ -216,24 +311,90 @@ document.getElementById("removePhotoBtn").addEventListener("click", () => {
   });
 });
 
+// ─── Identity Edit Mode ──────────────────────────────────────
+const _identityInputIds  = ["nameInput", "addressInput", "phoneInput", "ageInput"];
+const _identitySelectIds = ["genderInput", "bloodGroupInput"];
+
+function setIdentityReadonly(readonly) {
+  _identityInputIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (readonly) {
+      el.setAttribute("readonly", true);
+      el.classList.add("readonly-mode");
+    } else {
+      el.removeAttribute("readonly");
+      el.classList.remove("readonly-mode");
+    }
+  });
+  _identitySelectIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (readonly) {
+      el.setAttribute("disabled", true);
+      el.classList.add("readonly-mode");
+    } else {
+      el.removeAttribute("disabled");
+      el.classList.remove("readonly-mode");
+    }
+  });
+}
+
+/* Snapshot of values before edit (for cancel) */
+let _identitySnapshot = {};
+
+document.getElementById("editProfileBtn").addEventListener("click", () => {
+  /* Save snapshot */
+  _identitySnapshot = {
+    name:             document.getElementById("nameInput").value,
+    address:          document.getElementById("addressInput").value,
+    phone:            document.getElementById("phoneInput").value,
+    age:              document.getElementById("ageInput").value,
+    gender:           document.getElementById("genderInput").value,
+    bloodGroup:       document.getElementById("bloodGroupInput").value,
+  };
+  setIdentityReadonly(false);
+  document.getElementById("editProfileBtn").style.display    = "none";
+  document.getElementById("identityActions").style.display   = "flex";
+  /* Add glow effect to the card */
+  document.getElementById("editProfileBtn").closest(".profile-card").classList.add("card-editing");
+  document.getElementById("nameInput").focus();
+});
+
+document.getElementById("cancelEditBtn").addEventListener("click", () => {
+  /* Restore snapshot */
+  document.getElementById("nameInput").value              = _identitySnapshot.name || "";
+  document.getElementById("addressInput").value           = _identitySnapshot.address || "";
+  document.getElementById("phoneInput").value             = _identitySnapshot.phone || "";
+  document.getElementById("ageInput").value               = _identitySnapshot.age || "";
+  document.getElementById("genderInput").value            = _identitySnapshot.gender || "";
+  document.getElementById("bloodGroupInput").value        = _identitySnapshot.bloodGroup || "";
+  setIdentityReadonly(true);
+  document.getElementById("identityActions").style.display = "none";
+  document.getElementById("editProfileBtn").style.display  = "inline-flex";
+  document.getElementById("cancelEditBtn").closest(".profile-card").classList.remove("card-editing");
+});
+
 // ─── Save Profile ─────────────────────────────────────────────
 document.getElementById("saveProfileBtn").addEventListener("click", async () => {
   try {
     const newName     = document.getElementById("nameInput").value.trim();
     const address     = document.getElementById("addressInput").value.trim();
     const phone       = document.getElementById("phoneInput").value.trim();
-    const emergency   = document.getElementById("emergencyContactInput").value.trim();
+    const age         = document.getElementById("ageInput").value.trim();
+    const gender      = document.getElementById("genderInput").value;
+    const bloodGroup  = document.getElementById("bloodGroupInput").value;
 
     if (!newName) { showToast("Name cannot be empty", "warning"); return; }
 
     /* Save to MongoDB via API (also updates name in User collection) */
-    const result = await apiSaveProfile({ name: newName, address, phone, emergencyContact: emergency });
+    const result = await apiSaveProfile({ name: newName, address, phone, age, gender, bloodGroup });
     if (!result.success) { showToast("Error saving profile. Please try again.", "error"); return; }
 
     /* Update cache */
-    profileCache.address = address;
-    profileCache.phone = phone;
-    profileCache.emergencyContact = emergency;
+    profileCache.address    = address;
+    profileCache.phone      = phone;
+    profileCache.age        = age;
+    profileCache.gender     = gender;
+    profileCache.bloodGroup = bloodGroup;
 
     /* Update sessionStorage user name */
     const currentUser = JSON.parse(sessionStorage.getItem("seap_user") || "{}");
@@ -246,11 +407,82 @@ document.getElementById("saveProfileBtn").addEventListener("click", async () => 
     const initFallback = document.getElementById("heroAvatarInitials");
     initFallback.textContent = initials(newName);
 
+    /* Return to view mode */
+    setIdentityReadonly(true);
+    document.getElementById("identityActions").style.display = "none";
+    document.getElementById("editProfileBtn").style.display  = "inline-flex";
+    document.getElementById("saveProfileBtn").closest(".profile-card").classList.remove("card-editing");
+
     showToast("Profile saved successfully!", "success");
   } catch (err) {
     console.error("saveProfile error:", err);
     showToast("Error saving profile. Please try again.", "error");
   }
+});
+
+// ─── Emergency Contact Edit / Save ──────────────────────────
+function setEcReadonly(readonly) {
+  ["ecNameInput", "ecPhoneInput"].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (readonly) {
+      el.setAttribute("readonly", true);
+      el.classList.add("readonly-mode");
+    } else {
+      el.removeAttribute("readonly");
+      el.classList.remove("readonly-mode");
+    }
+  });
+}
+
+let _ecSnapshot = {};
+
+document.getElementById("editEcBtn").addEventListener("click", () => {
+  _ecSnapshot = {
+    name:  document.getElementById("ecNameInput").value,
+    phone: document.getElementById("ecPhoneInput").value,
+  };
+  setEcReadonly(false);
+  document.getElementById("editEcBtn").style.display = "none";
+  document.getElementById("ecActions").style.display = "flex";
+  document.getElementById("editEcBtn").closest(".profile-card").classList.add("card-editing");
+  document.getElementById("ecNameInput").focus();
+});
+
+document.getElementById("cancelEcBtn").addEventListener("click", () => {
+  document.getElementById("ecNameInput").value  = _ecSnapshot.name  || "";
+  document.getElementById("ecPhoneInput").value = _ecSnapshot.phone || "";
+  setEcReadonly(true);
+  document.getElementById("ecActions").style.display  = "none";
+  document.getElementById("editEcBtn").style.display   = "inline-flex";
+  document.getElementById("cancelEcBtn").closest(".profile-card").classList.remove("card-editing");
+});
+
+document.getElementById("saveEcBtn").addEventListener("click", async () => {
+  const ecName  = document.getElementById("ecNameInput").value.trim();
+  const ecPhone = document.getElementById("ecPhoneInput").value.trim();
+
+  if (!ecPhone) { showToast("Please enter the emergency contact phone number", "warning"); return; }
+
+  document.getElementById("saveEcBtn").disabled = true;
+  document.getElementById("saveEcBtn").textContent = "Saving...";
+
+  const result = await apiSaveProfile({ emergencyContactName: ecName, emergencyContactPhone: ecPhone });
+
+  document.getElementById("saveEcBtn").disabled = false;
+  document.getElementById("saveEcBtn").innerHTML = "<span>💾</span> Save Contact";
+
+  if (!result.success) { showToast("Error saving contact. Please try again.", "error"); return; }
+
+  profileCache.emergencyContactName  = ecName;
+  profileCache.emergencyContactPhone = ecPhone;
+
+  setEcReadonly(true);
+  document.getElementById("ecActions").style.display  = "none";
+  document.getElementById("editEcBtn").style.display   = "inline-flex";
+  document.getElementById("saveEcBtn").closest(".profile-card").classList.remove("card-editing");
+
+  showToast("Emergency contact saved! " + (ecName ? ecName + " — " : "") + ecPhone, "success");
 });
 
 // ─── Document Upload ──────────────────────────────────────────
@@ -407,24 +639,55 @@ function renderDocs() {
     item.className = "doc-item";
     item.dataset.id = doc.id;
 
+    const isImage = doc.mimeType && doc.mimeType.startsWith("image/");
+    const isPdf   = doc.mimeType === "application/pdf";
+
     const date = doc.uploadedAt
       ? new Date(doc.uploadedAt).toLocaleDateString("en-IN", { day:"2-digit", month:"short", year:"numeric" })
       : "—";
 
+    const thumbHtml = (isImage || isPdf)
+      ? `<div class="doc-thumb-wrap" id="thumbWrap-${doc.id}"></div>`
+      : `<span class="doc-type-icon">${fileIcon(doc.mimeType)}</span>`;
+
     item.innerHTML = `
-      <span class="doc-type-icon">${fileIcon(doc.mimeType)}</span>
+      ${thumbHtml}
       <div class="doc-info">
         <div class="doc-label">${escHtml(doc.label)}</div>
         <div class="doc-meta">${escHtml(doc.filename)} · ${formatBytes(doc.size)} · ${date}</div>
       </div>
       <div class="doc-actions">
+        <button class="doc-action-btn view"     title="View"     data-id="${doc.id}">👁</button>
         <button class="doc-action-btn download" title="Download" data-id="${doc.id}">⬇</button>
         <button class="doc-action-btn delete"   title="Delete"   data-id="${doc.id}">🗑</button>
       </div>
     `;
     list.appendChild(item);
+
+    // Fill thumbnail asynchronously
+    const wrap = document.getElementById(`thumbWrap-${doc.id}`);
+    if (wrap) {
+      if (isImage) {
+        const img = document.createElement("img");
+        img.src = doc.data;
+        img.className = "doc-thumb";
+        wrap.appendChild(img);
+      } else if (isPdf) {
+        const canvas = document.createElement("canvas");
+        canvas.className = "doc-thumb";
+        wrap.appendChild(canvas);
+        generatePdfThumbnail(doc.data, canvas);
+      }
+    }
   });
 
+  /* View */
+  list.querySelectorAll(".doc-action-btn.view").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const doc = profileCache.documents.find(d => d.id === btn.dataset.id);
+      if (doc) openDocViewer(doc);
+    });
+  });
   /* Download */
   list.querySelectorAll(".doc-action-btn.download").forEach(btn => {
     btn.addEventListener("click", () => downloadDoc(btn.dataset.id));

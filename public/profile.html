@@ -26,7 +26,7 @@
     <!-- ═══ TOP NAV ══════════════════════════════════════════════ -->
     <nav class="topbar">
       <div class="topbar-left">
-        <a href="dashboard.html" class="topbar-logo">
+        <a href="#" onclick="history.back(); return false;" class="topbar-logo">
           <div class="topbar-logo-icon">🆘</div>
           <div>
             <div class="topbar-title">S.E.A.P</div>
@@ -36,7 +36,7 @@
         <div class="topbar-breadcrumb">
           <span class="breadcrumb-item">SYSTEM</span>
           <span class="breadcrumb-sep">›</span>
-          <a href="dashboard.html" class="breadcrumb-item breadcrumb-link">DASHBOARD</a>
+          <a href="#" onclick="history.back(); return false;" class="breadcrumb-item breadcrumb-link">DASHBOARD</a>
           <span class="breadcrumb-sep">›</span>
           <span class="breadcrumb-item active">MY PROFILE</span>
         </div>
@@ -75,7 +75,7 @@
             <p class="page-title-sub">Manage your personal information and documents</p>
           </div>
         </div>
-        <a href="dashboard.html" class="back-btn">← Back to Dashboard</a>
+        <a href="#" onclick="history.back(); return false;" class="back-btn">← Back to Dashboard</a>
       </div>
 
       <!-- ── Hero Banner ── -->
@@ -126,6 +126,7 @@
             <div class="card-header">
               <span class="card-header-icon">🪪</span>
               <span class="card-header-title">IDENTITY</span>
+              <button type="button" class="card-edit-btn" id="editProfileBtn" title="Edit profile">✏️ Edit</button>
             </div>
 
             <div class="form-section">
@@ -157,21 +158,87 @@
                 </div>
               </div>
 
-              <!-- Emergency Contact -->
-              <div class="form-group">
-                <label class="form-label">EMERGENCY CONTACT</label>
-                <div class="input-wrapper">
-                  <span class="input-icon">🚨</span>
-                  <input type="text" id="emergencyContactInput" class="profile-input" placeholder="Name — Phone Number" />
+              <!-- Age · Gender · Blood Group -->
+              <div class="form-row-3">
+                <div class="form-group">
+                  <label class="form-label">AGE</label>
+                  <div class="input-wrapper">
+                    <span class="input-icon">🎂</span>
+                    <input type="number" id="ageInput" class="profile-input" placeholder="e.g. 22" min="1" max="120" />
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">GENDER</label>
+                  <div class="input-wrapper select-wrapper">
+                    <span class="input-icon">⚧</span>
+                    <select id="genderInput" class="profile-input profile-select">
+                      <option value="">Select</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">BLOOD GROUP</label>
+                  <div class="input-wrapper select-wrapper">
+                    <span class="input-icon">🩸</span>
+                    <select id="bloodGroupInput" class="profile-input profile-select">
+                      <option value="">Select</option>
+                      <option value="A+">A+</option>
+                      <option value="A-">A-</option>
+                      <option value="B+">B+</option>
+                      <option value="B-">B-</option>
+                      <option value="AB+">AB+</option>
+                      <option value="AB-">AB-</option>
+                      <option value="O+">O+</option>
+                      <option value="O-">O-</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 
             </div><!-- /form-section -->
 
-            <div class="save-btn-wrap">
-              <button type="button" class="save-btn" id="saveProfileBtn">
-                <span>💾</span> SAVE PROFILE
-              </button>
+            <div class="identity-actions" id="identityActions" style="display:none">
+              <button type="button" class="cancel-edit-btn" id="cancelEditBtn">✕ Cancel</button>
+              <button type="button" class="save-btn" id="saveProfileBtn"><span>💾</span> Save Changes</button>
+            </div>
+          </div>
+
+          <!-- Emergency Contact Card -->
+          <div class="profile-card ec-card">
+            <div class="profile-card-top-line ec-top-line"></div>
+            <div class="card-header">
+              <span class="card-header-icon">🆘</span>
+              <span class="card-header-title">EMERGENCY CONTACT</span>
+              <button type="button" class="card-edit-btn" id="editEcBtn" title="Edit emergency contact">✏️ Edit</button>
+            </div>
+            <p class="ec-hint">This person will receive an SMS alert when you trigger SOS.</p>
+
+            <div class="form-section">
+              <!-- Contact Name -->
+              <div class="form-group">
+                <label class="form-label">CONTACT NAME</label>
+                <div class="input-wrapper">
+                  <span class="input-icon">👤</span>
+                  <input type="text" id="ecNameInput" class="profile-input" placeholder="e.g. Mom, Dad, Emergency Contact" />
+                </div>
+              </div>
+
+              <!-- Contact Phone -->
+              <div class="form-group">
+                <label class="form-label">CONTACT PHONE NUMBER</label>
+                <div class="input-wrapper">
+                  <span class="input-icon">📱</span>
+                  <input type="tel" id="ecPhoneInput" class="profile-input" placeholder="+91 XXXXX XXXXX" />
+                </div>
+              </div>
+            </div>
+
+            <div class="identity-actions" id="ecActions" style="display:none">
+              <button type="button" class="cancel-edit-btn" id="cancelEcBtn">✕ Cancel</button>
+              <button type="button" class="save-btn" id="saveEcBtn"><span>💾</span> Save Contact</button>
             </div>
           </div>
 
@@ -312,6 +379,19 @@
       </div>
     </div>
 
+    <!-- Full-screen document viewer -->
+    <div class="doc-viewer-overlay" id="docViewerOverlay">
+      <div class="doc-viewer-header">
+        <span class="doc-viewer-title" id="docViewerTitle">Document</span>
+        <div class="doc-viewer-header-actions">
+          <button class="doc-viewer-btn" id="docViewerDownload" title="Download">⬇ Download</button>
+          <button class="doc-viewer-btn close" id="docViewerClose" title="Close">✕</button>
+        </div>
+      </div>
+      <div class="doc-viewer-body" id="docViewerBody"></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="js/auth.js"></script>
     <script src="js/profile.js"></script>
   </body>

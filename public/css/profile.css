@@ -301,6 +301,35 @@ body { background: var(--bg-deep); font-family: var(--font-ui); padding-top: 64p
 .form-section { padding: 18px 20px 4px; }
 
 .form-group { margin-bottom: 16px; }
+
+/* ── 3-column row for Age / Gender / Blood Group ── */
+.form-row-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.form-row-3 .form-group { margin-bottom: 0; }
+
+/* ── Select input ── */
+.profile-select {
+  appearance: none; -webkit-appearance: none;
+  background: transparent;
+  cursor: pointer;
+  padding-right: 28px !important;
+}
+.select-wrapper { position: relative; }
+.select-wrapper::after {
+  content: "▾";
+  position: absolute; right: 10px; top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.7rem; color: var(--primary);
+  pointer-events: none;
+}
+.profile-select option {
+  background: #0a0f1e; color: var(--text-primary);
+}
+body.light-mode .profile-select option { background: #f8faff; }
 .form-label {
   display: block; font-family: var(--font-tech); font-size: 0.57rem;
   font-weight: 600; color: var(--text-muted); letter-spacing: 2.5px;
@@ -477,6 +506,78 @@ body { background: var(--bg-deep); font-family: var(--font-ui); padding-top: 64p
 }
 .doc-action-btn.download:hover { background: rgba(0,245,255,0.1); color: var(--primary); border-color: var(--primary); }
 .doc-action-btn.delete:hover  { background: rgba(255,34,68,0.1); color: var(--danger); border-color: var(--danger); }
+.doc-action-btn.view:hover    { background: rgba(120,80,255,0.15); color: #a78bfa; border-color: #a78bfa; }
+
+/* ── Document Thumbnail ───────────────────────────────────────── */
+.doc-thumb-wrap {
+  width: 52px; height: 52px; flex-shrink: 0;
+  border-radius: 9px; overflow: hidden;
+  background: rgba(0,0,0,0.25);
+  border: 1px solid rgba(0,245,255,0.1);
+  display: flex; align-items: center; justify-content: center;
+}
+.doc-thumb {
+  width: 100%; height: 100%; object-fit: cover;
+  display: block;
+}
+
+/* ── Full-screen Document Viewer ─────────────────────────────── */
+.doc-viewer-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(0,0,0,0.92);
+  display: none; flex-direction: column;
+}
+.doc-viewer-overlay.open { display: flex; }
+
+.doc-viewer-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 18px;
+  background: rgba(10,15,30,0.95);
+  border-bottom: 1px solid rgba(0,245,255,0.1);
+  flex-shrink: 0;
+}
+.doc-viewer-title {
+  font-family: var(--font-mono); font-size: 0.9rem;
+  color: var(--primary); text-transform: uppercase;
+  letter-spacing: 0.05em; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; max-width: 60%;
+}
+.doc-viewer-header-actions { display: flex; gap: 8px; }
+.doc-viewer-btn {
+  padding: 6px 14px; border-radius: 8px; cursor: pointer;
+  font-size: 0.78rem; font-family: var(--font-mono);
+  border: 1px solid rgba(0,245,255,0.2);
+  background: rgba(0,245,255,0.06); color: var(--text-primary);
+  transition: var(--transition);
+}
+.doc-viewer-btn:hover { background: rgba(0,245,255,0.15); color: var(--primary); border-color: var(--primary); }
+.doc-viewer-btn.close { border-color: rgba(255,34,68,0.3); color: var(--danger); }
+.doc-viewer-btn.close:hover { background: rgba(255,34,68,0.15); border-color: var(--danger); }
+
+.doc-viewer-body {
+  flex: 1; overflow: auto;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.doc-viewer-img {
+  max-width: 100%; max-height: 100%;
+  border-radius: 10px; object-fit: contain;
+  box-shadow: 0 0 40px rgba(0,245,255,0.08);
+}
+.doc-viewer-iframe {
+  width: 100%; height: 100%; border: none;
+  border-radius: 6px; min-height: 70vh;
+}
+.doc-viewer-nopreview {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 16px; color: var(--text-muted);
+  font-family: var(--font-body); font-size: 0.9rem;
+}
+
+/* light mode adjustments */
+body.light-mode .doc-thumb-wrap { background: rgba(37,99,235,0.06); border-color: rgba(37,99,235,0.12); }
+body.light-mode .doc-viewer-overlay { background: rgba(255,255,255,0.95); }
+body.light-mode .doc-viewer-header { background: rgba(240,245,255,0.98); border-color: rgba(37,99,235,0.1); }
 
 /* âAccount Info Card*/
 .acct-stats-grid {
@@ -687,3 +788,221 @@ body.light-mode .hero-badge.member { background: rgba(37,99,235,0.07); border-co
 body.light-mode .hero-change-photo-btn { background: rgba(37,99,235,0.06); border-color: rgba(37,99,235,0.18); }
 body.light-mode .hero-change-photo-btn:hover { background: rgba(37,99,235,0.12); border-color: var(--primary); }
 body.light-mode .doc-count-badge { background: rgba(37,99,235,0.1); border-color: rgba(37,99,235,0.2); }
+
+/* --- Card Edit Button ---------------------------------------------------- */
+.card-edit-btn {
+  display: inline-flex; align-items: center; gap: 5px; margin-left: auto;
+  padding: 5px 13px; border-radius: 8px; cursor: pointer;
+  background: rgba(0,245,255,0.07); border: 1px solid rgba(0,245,255,0.22);
+  color: var(--primary); font-family: var(--font-body); font-size: 0.72rem; font-weight: 600;
+  letter-spacing: 0.5px; transition: var(--transition); white-space: nowrap;
+}
+.card-edit-btn:hover {
+  background: rgba(0,245,255,0.15); border-color: var(--primary);
+  box-shadow: 0 0 12px rgba(0,245,255,0.15);
+}
+
+/* --- Readonly input styles ----------------------------------------------- */
+.profile-input.readonly-mode { color: var(--text-secondary); cursor: default; }
+.input-wrapper:has(.profile-input.readonly-mode) {
+  border-color: rgba(0,245,255,0.12);
+  background: rgba(255,255,255,0.015);
+  pointer-events: none;
+}
+
+/* --- Identity Actions row (edit mode) ------------------------------------ */
+.identity-actions {
+  display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+  padding: 6px 20px 20px;
+}
+.cancel-edit-btn {
+  padding: 9px 18px; border-radius: 10px; cursor: pointer;
+  background: none; border: 1px solid rgba(255,34,68,0.3);
+  color: var(--danger); font-family: var(--font-body); font-size: 0.78rem; font-weight: 600;
+  transition: var(--transition);
+}
+.cancel-edit-btn:hover { background: rgba(255,34,68,0.09); border-color: var(--danger); }
+
+/* --- Save btn override inside identity-actions (inline, not full-width) -- */
+.identity-actions .save-btn {
+  width: auto;
+  display: inline-flex;
+}
+
+/* --- Textarea wrapper: allow scrollbar to show outside overflow-hidden --- */
+.textarea-wrapper {
+  overflow: visible !important;
+}
+.textarea-wrapper .input-icon {
+  border-radius: 10px 0 0 10px;
+}
+.textarea-wrapper .profile-textarea {
+  border-radius: 0 10px 10px 0;
+  overflow-y: auto;
+}
+
+/* --- Readonly textarea: no scroll capture, no resize -------------------- */
+.profile-textarea.readonly-mode {
+  overflow: hidden;
+  resize: none;
+}
+
+/* --- Card glow effect in edit mode -------------------------------------- */
+.profile-card.card-editing {
+  border-color: rgba(0,245,255,0.45) !important;
+  box-shadow: 0 0 0 3px rgba(0,245,255,0.08), 0 0 40px rgba(0,245,255,0.10), var(--shadow-card) !important;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.profile-card.card-editing .profile-card-top-line {
+  opacity: 1;
+  background: linear-gradient(90deg, transparent, var(--primary), var(--secondary), var(--primary), transparent);
+}
+
+/* --- Hover glow effect on each identity input-wrapper ------------------- */
+.input-wrapper {
+  position: relative;
+}
+.input-wrapper::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(0,245,255,0.0), rgba(123,47,247,0.0));
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  pointer-events: none;
+  z-index: 0;
+}
+.input-wrapper:hover::before {
+  opacity: 1;
+  background: linear-gradient(135deg, rgba(0,245,255,0.07), rgba(123,47,247,0.09));
+}
+.input-wrapper:hover {
+  border-color: rgba(0,245,255,0.55) !important;
+  box-shadow: 0 0 0 3px rgba(0,245,255,0.06), 0 0 18px rgba(0,245,255,0.10);
+  background: rgba(0,245,255,0.025);
+}
+
+/* --- Hover glow on each form-group label too ---------------------------- */
+.form-group:hover .form-label {
+  color: rgba(0,245,255,0.75);
+  text-shadow: 0 0 8px rgba(0,245,255,0.25);
+  transition: color 0.3s ease, text-shadow 0.3s ease;
+}
+
+/* --- Fix: allow hover on wrapper even in readonly mode ------------------ */
+.input-wrapper:has(.profile-input.readonly-mode) {
+  pointer-events: auto !important;
+}
+.input-wrapper:has(.profile-input.readonly-mode) .profile-input {
+  pointer-events: none;
+}
+.input-wrapper:has(.profile-input.readonly-mode) .input-icon {
+  pointer-events: none;
+}
+
+/* --- Match hover glow EXACTLY to focus-within (edit mode field glow) ---- */
+.input-wrapper:hover {
+  border-color: var(--primary) !important;
+  background: rgba(0,245,255,0.025) !important;
+  box-shadow: 0 0 0 3px rgba(0,245,255,0.07), 0 0 18px rgba(0,245,255,0.08), 0 0 30px rgba(0,245,255,0.06) !important;
+}
+.input-wrapper:hover .input-icon {
+  background: rgba(0,245,255,0.18);
+  border-right-color: var(--primary);
+}
+.form-group:hover .form-label {
+  color: var(--primary);
+  text-shadow: 0 0 10px rgba(0,245,255,0.35);
+}
+
+/* === IDENTITY FIELD HOVER — matches edit-mode focus exactly ============= */
+.form-section .input-wrapper {
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, background 0.25s ease;
+}
+.form-section .input-wrapper:hover {
+  border-color: var(--primary) !important;
+  background: rgba(0,245,255,0.04) !important;
+  box-shadow:
+    0 0 0 3px rgba(0,245,255,0.09),
+    0 0 22px rgba(0,245,255,0.14),
+    inset 0 0 30px rgba(0,245,255,0.03) !important;
+}
+/* Icon: dark bg + cyan glow — same as edit/focus state */
+.form-section .input-wrapper:hover .input-icon {
+  background: rgba(0,10,28,0.88) !important;
+  border-right-color: var(--primary) !important;
+  color: var(--primary);
+  box-shadow: inset 0 0 18px rgba(0,245,255,0.18), 4px 0 12px rgba(0,245,255,0.10);
+  transition: background 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+/* Label glow */
+.form-section .form-group:hover .form-label {
+  color: var(--primary) !important;
+  text-shadow: 0 0 12px rgba(0,245,255,0.5);
+  transition: color 0.25s ease, text-shadow 0.25s ease;
+}
+/* Text inside input — subtle cyan tint on hover */
+.form-section .input-wrapper:hover .profile-input {
+  color: #e0fbff;
+}
+
+/* --- Remove dark bg from icon on hover, keep glow only ----------------- */
+.form-section .input-wrapper:hover .input-icon {
+  background: rgba(0,245,255,0.10) !important;
+  box-shadow: none !important;
+}
+
+/* --- Remove text color change on hover --------------------------------- */
+.form-section .input-wrapper:hover .profile-input {
+  color: var(--text-primary) !important;
+}
+
+/* --- Icon: subtle inner glow on hover ---------------------------------- */
+.form-section .input-wrapper:hover .input-icon {
+  background: rgba(0,245,255,0.10) !important;
+  box-shadow: inset 0 0 14px rgba(0,245,255,0.22), inset 0 0 4px rgba(0,245,255,0.15) !important;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   EMERGENCY CONTACT CARD
+   ══════════════════════════════════════════════════════════════ */
+
+/* Danger/red accent for the top line */
+.ec-card .ec-top-line,
+.ec-card .profile-card-top-line {
+  background: linear-gradient(90deg, transparent, #ff2244, #ff6b35, #ff2244, transparent) !important;
+  opacity: 0.7;
+}
+
+/* Subtle red border tint */
+.ec-card {
+  border-color: rgba(255, 34, 68, 0.25) !important;
+}
+
+/* Hint text below header */
+.ec-hint {
+  font-family: var(--font-tech);
+  font-size: 0.67rem;
+  color: var(--text-muted);
+  letter-spacing: 0.8px;
+  margin: -6px 0 14px;
+  padding: 0 4px;
+  line-height: 1.5;
+  border-left: 2px solid rgba(255,34,68,0.4);
+  padding-left: 10px;
+}
+
+/* Card in edit mode — red glow */
+.ec-card.card-editing {
+  border-color: rgba(255, 34, 68, 0.50) !important;
+  box-shadow:
+    0 0 0 3px rgba(255, 34, 68, 0.07),
+    0 0 40px rgba(255, 34, 68, 0.12),
+    var(--shadow-card) !important;
+}
+
+.ec-card.card-editing .ec-top-line,
+.ec-card.card-editing .profile-card-top-line {
+  opacity: 1;
+}
