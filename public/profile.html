@@ -10,8 +10,15 @@
     />
     <link rel="stylesheet" href="css/global.css" />
     <link rel="stylesheet" href="css/profile.css" />
+    <script>
+      (function(){
+        if(localStorage.getItem('seap_theme')==='light')
+          document.documentElement.classList.add('light-mode');
+      })();
+    </script>
   </head>
   <body>
+    <script>if(localStorage.getItem('seap_theme')==='light')document.body.classList.add('light-mode');</script>
     <!-- Background -->
     <div class="grid-bg"></div>
     <div class="scanlines"></div>
@@ -233,6 +240,29 @@
                   <span class="input-icon">📱</span>
                   <input type="tel" id="ecPhoneInput" class="profile-input" placeholder="+91 XXXXX XXXXX" />
                 </div>
+              </div>
+
+              <!-- Telegram Chat ID -->
+              <div class="form-group">
+                <label class="form-label">TELEGRAM CHAT ID <span style="font-size:0.65rem;color:var(--text-muted);font-weight:400">(for Telegram SOS alerts)</span></label>
+                <div class="input-wrapper">
+                  <span class="input-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="20" height="20">
+                      <defs>
+                        <linearGradient id="tg-grad2" x1="120" y1="0" x2="120" y2="240" gradientUnits="userSpaceOnUse">
+                          <stop offset="0" stop-color="#2AABEE"/>
+                          <stop offset="1" stop-color="#229ED9"/>
+                        </linearGradient>
+                      </defs>
+                      <circle cx="120" cy="120" r="120" fill="url(#tg-grad2)"/>
+                      <path d="M176 68L152.6 172.4c-1.7 7.6-6.3 9.5-12.7 5.9l-35-25.8-16.9 16.3c-1.9 1.9-3.4 3.4-7 3.4l2.5-35.4 64.5-58.3c2.8-2.5-.6-3.9-4.3-1.4L77.4 128.6 43.8 118c-7.4-2.3-7.5-7.4 1.5-11l122.8-47.3c6.2-2.3 11.6 1.5 7.9 8.3z" fill="#fff"/>
+                    </svg>
+                  </span>
+                  <input type="text" id="ecTelegramChatIdInput" class="profile-input" placeholder="e.g. 123456789 — ask contact to message @userinfobot" />
+                </div>
+                <p style="font-size:0.65rem;color:var(--text-muted);margin-top:4px;line-height:1.4">
+                  💡 Ask the contact to send <b>/start</b> to <b>@Seap_ai_bot</b> on Telegram — the bot will reply with their Chat ID. Paste that ID here.
+                </p>
               </div>
             </div>
 

@@ -320,7 +320,7 @@ let facilityMarkers = { hospitals: [], police: [] };
 
 // ─── Google Maps Callback ─────────────────────────────────────
 window.initMap = function () {
-  const initTheme = sessionStorage.getItem("seap_theme") || "dark";
+  const initTheme = localStorage.getItem("seap_theme") || "dark";
   const initStyle = initTheme === "light" ? LIGHT_MAP_STYLE : DARK_MAP_STYLE;
   const initBg    = initTheme === "light" ? "#f8faff" : "#020510";
 
@@ -947,8 +947,34 @@ async function fetchOverpassServices(lat, lng, radius = 10000) {
   }
 }
 
+// ─── Saved Phone Numbers Cache (placeId → phone) ────────────
+const savedPhones = {};   // populated from DB on each facility refresh
+
 async function applyFacilityResults() {
-  // Render immediately with Haversine distances so UI is not blocked
+  // 1. Fetch user-added phone numbers from DB for all current facilities
+  const allFacilities = [...state.hospitals, ...state.policeStations];
+  if (allFacilities.length > 0) {
+    try {
+      const res = await fetch("/api/place-phones/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ placeIds: allFacilities.map(f => String(f.id)) }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        Object.assign(savedPhones, data.phones);
+        // Merge into facility objects so phoneButtonHTML picks them up
+        allFacilities.forEach(f => {
+          if (!f.phone && savedPhones[String(f.id)]) {
+            f.phone = savedPhones[String(f.id)];
+            f.phoneSavedByUser = true;
+          }
+        });
+      }
+    } catch (e) { /* non-fatal */ }
+  }
+
+  // 2. Render with distances so UI is not blocked
   renderFacilityCards();
   renderFacilityMarkers();
   DOM.hospitalCount.textContent = state.hospitals.length;
@@ -960,17 +986,92 @@ async function applyFacilityResults() {
     "success",
   );
 
-  // Then enrich with real road distances progressively in the background
+  // 3. Enrich with real road distances progressively in the background
   enrichWithRoadDistances([...state.hospitals, ...state.policeStations], state.lat, state.lng);
 }
 
 // ─── Phone button HTML helper ───────────────────────────────
 function phoneButtonHTML(f) {
   if (f.phone) {
-    return `<a href="tel:${f.phone}" class="facility-action-btn call">📞 ${f.phone}</a>`;
+    const savedBadge = f.phoneSavedByUser
+      ? ` <span style="font-size:0.55rem;color:var(--success,#00ff88);flex-shrink:0;">✔</span>`
+      : "";
+    return `<a href="tel:${f.phone}" class="facility-action-btn call"><span style="flex-shrink:0;">📞</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.phone}</span>${savedBadge}</a>`;
   }
-  return `<a href="https://www.google.com/search?q=${encodeURIComponent(f.name + ' phone number contact')}" target="_blank" rel="noopener" class="facility-action-btn call" style="opacity:0.75;font-size:0.68rem;">🔍 Find Number</a>`;
+  // No phone — show Find Number only (Edit button is always added separately)
+  const nameEsc = encodeURIComponent(f.name + ' phone number contact');
+  return `<a href="https://www.google.com/search?q=${nameEsc}" target="_blank" rel="noopener"
+     class="facility-action-btn call" style="opacity:0.85;"><span style="flex-shrink:0;">🔍</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Find Number</span></a>`;
 }
+
+// ─── Add Phone Modal helpers ──────────────────────────────────
+let _addPhonePlaceId   = null;
+let _addPhonePlaceName = null;
+
+function openAddPhoneModal(placeId, placeName) {
+  _addPhonePlaceId   = placeId;
+  _addPhonePlaceName = placeName;
+  const overlay = document.getElementById("addPhoneOverlay");
+  const nameEl  = document.getElementById("addPhoneplaceName");
+  const input   = document.getElementById("addPhoneInput");
+  nameEl.textContent = placeName;
+  // Pre-fill with already-saved number if present
+  input.value = savedPhones[placeId] || "";
+  overlay.style.display = "flex";
+  setTimeout(() => input.focus(), 80);
+}
+
+function closeAddPhoneModal() {
+  document.getElementById("addPhoneOverlay").style.display = "none";
+  _addPhonePlaceId   = null;
+  _addPhonePlaceName = null;
+}
+
+async function saveAddedPhone() {
+  const phone = document.getElementById("addPhoneInput").value.trim();
+  if (!phone) { showToast("Please enter a phone number", "warning", 2500); return; }
+  if (!_addPhonePlaceId) return;
+
+  try {
+    const res = await fetch("/api/place-phones/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        placeId:   _addPhonePlaceId,
+        placeName: _addPhonePlaceName,
+        phone,
+        userId: CURRENT_USER?.id || "",
+      }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message);
+
+    // Update local cache
+    savedPhones[_addPhonePlaceId] = phone;
+
+    // Update facility object so the card re-renders correctly
+    const all = [...state.hospitals, ...state.policeStations];
+    const fac = all.find(f => String(f.id) === _addPhonePlaceId);
+    if (fac) {
+      fac.phone = phone;
+      fac.phoneSavedByUser = true;
+    }
+
+    // Live-update just the phone slot in the DOM (no full re-render)
+    const slot = document.querySelector(`[data-phone-slot="${_addPhonePlaceId}"]`);
+    if (slot && fac) slot.innerHTML = phoneButtonHTML(fac);
+
+    showToast(`Number saved for ${_addPhonePlaceName}`, "success", 2500);
+    closeAddPhoneModal();
+  } catch (err) {
+    showToast("Failed to save number: " + err.message, "error", 3000);
+  }
+}
+
+// Close modal on overlay click
+document.getElementById("addPhoneOverlay")?.addEventListener("click", e => {
+  if (e.target === document.getElementById("addPhoneOverlay")) closeAddPhoneModal();
+});
 
 // ─── Distance Calculator (Haversine — straight-line fallback) ────────────────
 function getDistanceKm(lat1, lon1, lat2, lon2) {
@@ -1091,9 +1192,15 @@ function renderList(container, items, type, icon, color) {
         </div>
       </div>
       <div class="facility-actions">
-        <span data-phone-slot="${f.id}">${phoneButtonHTML(f)}</span>
-        <button class="facility-action-btn navigate" onclick="navigateToFacility(${f.lat}, ${f.lng}, '${f.name.replace(/'/g, "\\'")}')">
-          🗺 Navigate
+        <div class="facility-actions-row">
+          <span data-phone-slot="${f.id}">${phoneButtonHTML(f)}</span>
+          <button class="facility-action-btn navigate" onclick="navigateToFacility(${f.lat}, ${f.lng}, '${f.name.replace(/'/g, "\\'")}')">
+            🗺 Navigate
+          </button>
+        </div>
+        <button class="facility-action-btn edit-action-btn"
+          onclick="openAddPhoneModal('${String(f.id)}','${f.name.replace(/'/g, "\\'").replace(/"/g, '&quot;')}')" type="button">
+          ✏️ Edit Number
         </button>
       </div>
     </div>
@@ -1553,6 +1660,70 @@ document.getElementById("btnFullscreen").addEventListener("click", () => {
   }
 });
 
+// ─── Send Telegram Alert to Emergency Contact ────────────────
+async function sendEmergencyContactTelegram() {
+  try {
+    // Check Telegram toggle — if disabled, skip silently
+    const tgToggleEl = document.getElementById("telegramAlertToggle");
+    if (tgToggleEl && !tgToggleEl.checked) {
+      console.log("[Telegram] Service disabled via Settings — skipping alert");
+      return;
+    }
+
+    const res     = await fetch(`/api/profile/${CURRENT_USER?.id}`);
+    const data    = await res.json();
+    const profile = data?.profile || {};
+    const ecTelegramChatId = profile.emergencyContactTelegramChatId || "";
+    const ecName           = profile.emergencyContactName  || "Emergency Contact";
+
+    if (!ecTelegramChatId) {
+      showToast("⚠️ No Telegram Chat ID set. Add it in Profile → Emergency Contact.", "warning", 7000);
+      return;
+    }
+
+    const tgRes  = await fetch("/api/telegram/send-sos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: CURRENT_USER?.id,
+        lat: state.lat,
+        lng: state.lng,
+      }),
+    });
+    const tgData = await tgRes.json();
+
+    if (tgData.success) {
+      showToast(`✈️ Telegram SOS sent to ${ecName}! They will receive an AI-guided reply.`, "success", 7000);
+    } else {
+      showToast(`⚠️ Telegram alert failed: ${tgData.message}`, "warning", 8000);
+    }
+  } catch (err) {
+    console.warn("sendEmergencyContactTelegram error:", err);
+    showToast("⚠️ Could not send Telegram alert to emergency contact.", "warning", 5000);
+  }
+}
+
+// Called by the dedicated TELEGRAM ALERT button on the dashboard
+async function triggerTelegramSOS() {
+  showToast("✈️ Sending Telegram emergency alert...", "info", 3000);
+  await sendEmergencyContactTelegram();
+
+  // Log to backend
+  try {
+    await fetch("/api/sos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: CURRENT_USER?.id,
+        lat: state.lat,
+        lng: state.lng,
+        message: `[TELEGRAM BUTTON] Emergency triggered by ${CURRENT_USER?.name || "Unknown"}`,
+      }),
+    });
+  } catch (e) { /* silent */ }
+}
+window.triggerTelegramSOS = triggerTelegramSOS;
+
 // ─── Send SMS to Emergency Contact ───────────────────────────
 async function sendEmergencyContactSMS() {
   try {
@@ -1570,6 +1741,14 @@ async function sendEmergencyContactSMS() {
 
     const locationUrl  = `https://maps.google.com/?q=${state.lat.toFixed(6)},${state.lng.toFixed(6)}`;
     const smsBody      = `🚨 SOS ALERT! ${CURRENT_USER?.name || "Someone"} needs IMMEDIATE help!\nLocation: ${locationUrl}\nTime: ${new Date().toLocaleString("en-IN")}`;
+
+    // Check Twilio SMS toggle — if disabled, skip SMS entirely
+    const twilioToggleEl = document.getElementById("twilioSmsToggle");
+    const twilioEnabled  = twilioToggleEl ? twilioToggleEl.checked : true;
+    if (!twilioEnabled) {
+      showToast("⚠️ Twilio SMS service is disabled. Enable it in Settings.", "warning", 6000);
+      return;
+    }
 
     // Ask server to send via Twilio (if configured)
     const smsRes  = await fetch("/api/send-sms", {
@@ -1689,6 +1868,9 @@ async function triggerSOS() {
   // ─── Send SMS to Emergency Contact ─────────────────────────
   sendEmergencyContactSMS();
 
+  // ─── Send Telegram Alert to Emergency Contact ───────────────
+  sendEmergencyContactTelegram();
+
   const logEntry = {
     id: Date.now(),
     time: new Date().toLocaleTimeString(),
@@ -1790,7 +1972,7 @@ window.sendBrowserNotif = sendBrowserNotif;
   const themeLightBtn= document.getElementById("themeLightBtn");
 
   // Apply stored theme on load
-  const savedTheme = sessionStorage.getItem("seap_theme") || "dark";
+  const savedTheme = localStorage.getItem("seap_theme") || "dark";
   applyTheme(savedTheme);
 
   function applyTheme(theme) {
@@ -1803,7 +1985,7 @@ window.sendBrowserNotif = sendBrowserNotif;
       themeDarkBtn.classList.add("active");
       themeLightBtn.classList.remove("active");
     }
-    sessionStorage.setItem("seap_theme", theme);
+    localStorage.setItem("seap_theme", theme);
   }
 
   // Open modal
@@ -1826,6 +2008,11 @@ window.sendBrowserNotif = sendBrowserNotif;
   themeDarkBtn.addEventListener("click",  () => applyTheme("dark"));
   themeLightBtn.addEventListener("click", () => applyTheme("light"));
 
+  // Real-time cross-tab sync
+  window.addEventListener("storage", e => {
+    if (e.key === "seap_theme") applyTheme(e.newValue || "dark");
+  });
+
   // ── SOS Sound Alert Toggle ────────────────────────────────────
   const sosSoundToggle = document.getElementById("sosSoundToggle");
   const savedSosSound = sessionStorage.getItem("seap_sosSound");
@@ -1839,6 +2026,56 @@ window.sendBrowserNotif = sendBrowserNotif;
       sosSoundToggle.checked ? "🔔 SOS sound alert enabled" : "🔕 SOS sound alert disabled",
       sosSoundToggle.checked ? "success" : "info",
       2000
+    );
+  });
+
+  // ── Twilio SMS Toggle ─────────────────────────────────────────
+  const twilioSmsToggle = document.getElementById("twilioSmsToggle");
+  // Fetch current server-side state on load
+  fetch("/api/settings/twilio")
+    .then(r => r.json())
+    .then(d => {
+      twilioSmsToggle.checked = d.enabled;
+      sessionStorage.setItem("seap_twilioEnabled", d.enabled);
+    })
+    .catch(() => {});
+  twilioSmsToggle.addEventListener("change", () => {
+    const enabled = twilioSmsToggle.checked;
+    sessionStorage.setItem("seap_twilioEnabled", enabled);
+    // Sync to server — this disables/enables the webhook AI reply too
+    fetch("/api/settings/twilio", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    }).catch(() => {});
+    showToast(
+      enabled ? "📱 Twilio SMS service enabled" : "📵 Twilio SMS service disabled — no charges will apply",
+      enabled ? "success" : "info",
+      3000
+    );
+  });
+
+  // ── Telegram Alert Toggle ─────────────────────────────────────
+  const telegramAlertToggle = document.getElementById("telegramAlertToggle");
+  // Fetch current server-side state on load
+  fetch("/api/settings/telegram")
+    .then(r => r.json())
+    .then(d => {
+      telegramAlertToggle.checked = d.enabled;
+    })
+    .catch(() => {});
+  telegramAlertToggle.addEventListener("change", () => {
+    const enabled = telegramAlertToggle.checked;
+    // Sync to server — persisted in MongoDB
+    fetch("/api/settings/telegram", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    }).catch(() => {});
+    showToast(
+      enabled ? "✈️ Telegram alert service enabled" : "✈️ Telegram alert service disabled",
+      enabled ? "success" : "info",
+      3000
     );
   });
 

@@ -989,28 +989,52 @@
 
 /* Facility Actions */
 .facility-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.facility-actions-row {
+  display: flex;
+  gap: 6px;
+}
+
+.facility-actions-row > span[data-phone-slot] {
+  display: contents;
+}
+
+.facility-action-btn.edit-action-btn {
+  width: 100%;
+  border-color: rgba(255,107,53,0.4);
+  color: var(--accent-orange);
+  background: rgba(255,107,53,0.08);
+}
+
+.facility-action-btn.edit-action-btn:hover {
+  background: rgba(255,107,53,0.18);
+  box-shadow: 0 0 10px rgba(255,107,53,0.2);
 }
 
 .facility-action-btn {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding: 7px 10px;
+  gap: 4px;
+  padding: 7px 6px;
   background: var(--bg-glass);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
   font-family: var(--font-tech);
-  font-size: 0.6rem;
-  letter-spacing: 1px;
+  font-size: 0.58rem;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
   cursor: pointer;
   transition: var(--transition);
   text-decoration: none;
+  overflow: hidden;
 }
 
 .facility-action-btn.call {

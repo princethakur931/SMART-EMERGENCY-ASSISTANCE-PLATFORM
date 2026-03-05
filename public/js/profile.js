@@ -9,7 +9,7 @@
 const CURRENT_USER = requireAuth();
 
 // ─── API Helpers ─────────────────────────────────────────────
-let profileCache = { address: "", phone: "", age: "", gender: "", bloodGroup: "", emergencyContactName: "", emergencyContactPhone: "", memberSince: null, photo: null, documents: [] };
+let profileCache = { address: "", phone: "", age: "", gender: "", bloodGroup: "", emergencyContactName: "", emergencyContactPhone: "", emergencyContactTelegramChatId: "", memberSince: null, photo: null, documents: [] };
 
 async function apiGetProfile() {
   try {
@@ -24,6 +24,7 @@ async function apiGetProfile() {
         bloodGroup:             data.profile.bloodGroup             || "",
         emergencyContactName:   data.profile.emergencyContactName   || "",
         emergencyContactPhone:  data.profile.emergencyContactPhone  || "",
+        emergencyContactTelegramChatId: data.profile.emergencyContactTelegramChatId || "",
         memberSince:            data.profile.memberSince            || null,
         photo:                  data.profile.photo                  || null,
         documents:              data.profile.documents              || [],
@@ -188,9 +189,9 @@ function formatBytes(bytes) {
   return (bytes / 1048576).toFixed(2) + " MB";
 }
 
-// ─── Apply theme from sessionStorage (matches dashboard logic) ──
+// ─── Apply theme from localStorage (synced across pages) ──────
 (function applyTheme() {
-  const t = sessionStorage.getItem("seap_theme");
+  const t = localStorage.getItem("seap_theme");
   if (t === "light") document.body.classList.add("light-mode");
 })();
 
@@ -238,6 +239,8 @@ async function init() {
   /* ── Emergency Contact ── */
   document.getElementById("ecNameInput").value  = profile.emergencyContactName  || "";
   document.getElementById("ecPhoneInput").value = profile.emergencyContactPhone || "";
+  const ecTgEl = document.getElementById("ecTelegramChatIdInput");
+  if (ecTgEl) ecTgEl.value = profile.emergencyContactTelegramChatId || "";
   setEcReadonly(true);
 
   /* ── Account info ── */
@@ -422,7 +425,7 @@ document.getElementById("saveProfileBtn").addEventListener("click", async () => 
 
 // ─── Emergency Contact Edit / Save ──────────────────────────
 function setEcReadonly(readonly) {
-  ["ecNameInput", "ecPhoneInput"].forEach(id => {
+  ["ecNameInput", "ecPhoneInput", "ecTelegramChatIdInput"].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     if (readonly) {
@@ -439,8 +442,9 @@ let _ecSnapshot = {};
 
 document.getElementById("editEcBtn").addEventListener("click", () => {
   _ecSnapshot = {
-    name:  document.getElementById("ecNameInput").value,
-    phone: document.getElementById("ecPhoneInput").value,
+    name:     document.getElementById("ecNameInput").value,
+    phone:    document.getElementById("ecPhoneInput").value,
+    telegram: (document.getElementById("ecTelegramChatIdInput") || {}).value || "",
   };
   setEcReadonly(false);
   document.getElementById("editEcBtn").style.display = "none";
@@ -452,6 +456,8 @@ document.getElementById("editEcBtn").addEventListener("click", () => {
 document.getElementById("cancelEcBtn").addEventListener("click", () => {
   document.getElementById("ecNameInput").value  = _ecSnapshot.name  || "";
   document.getElementById("ecPhoneInput").value = _ecSnapshot.phone || "";
+  const tgEl = document.getElementById("ecTelegramChatIdInput");
+  if (tgEl) tgEl.value = _ecSnapshot.telegram || "";
   setEcReadonly(true);
   document.getElementById("ecActions").style.display  = "none";
   document.getElementById("editEcBtn").style.display   = "inline-flex";
@@ -459,15 +465,16 @@ document.getElementById("cancelEcBtn").addEventListener("click", () => {
 });
 
 document.getElementById("saveEcBtn").addEventListener("click", async () => {
-  const ecName  = document.getElementById("ecNameInput").value.trim();
-  const ecPhone = document.getElementById("ecPhoneInput").value.trim();
+  const ecName     = document.getElementById("ecNameInput").value.trim();
+  const ecPhone    = document.getElementById("ecPhoneInput").value.trim();
+  const ecTelegram = (document.getElementById("ecTelegramChatIdInput") || {}).value?.trim() || "";
 
   if (!ecPhone) { showToast("Please enter the emergency contact phone number", "warning"); return; }
 
   document.getElementById("saveEcBtn").disabled = true;
   document.getElementById("saveEcBtn").textContent = "Saving...";
 
-  const result = await apiSaveProfile({ emergencyContactName: ecName, emergencyContactPhone: ecPhone });
+  const result = await apiSaveProfile({ emergencyContactName: ecName, emergencyContactPhone: ecPhone, emergencyContactTelegramChatId: ecTelegram });
 
   document.getElementById("saveEcBtn").disabled = false;
   document.getElementById("saveEcBtn").innerHTML = "<span>💾</span> Save Contact";
@@ -476,6 +483,7 @@ document.getElementById("saveEcBtn").addEventListener("click", async () => {
 
   profileCache.emergencyContactName  = ecName;
   profileCache.emergencyContactPhone = ecPhone;
+  profileCache.emergencyContactTelegramChatId = ecTelegram;
 
   setEcReadonly(true);
   document.getElementById("ecActions").style.display  = "none";
@@ -747,11 +755,11 @@ function escHtml(str = "") {
       themeDarkBtn.classList.add("active");
       themeLightBtn.classList.remove("active");
     }
-    sessionStorage.setItem("seap_theme", theme);
+    localStorage.setItem("seap_theme", theme);
   }
 
   // Sync buttons to saved theme
-  const savedTheme = sessionStorage.getItem("seap_theme") || "dark";
+  const savedTheme = localStorage.getItem("seap_theme") || "dark";
   applySettingsTheme(savedTheme);
 
   openBtn.addEventListener("click", e => {
@@ -770,6 +778,39 @@ function escHtml(str = "") {
 
   themeDarkBtn.addEventListener("click",  () => applySettingsTheme("dark"));
   themeLightBtn.addEventListener("click", () => applySettingsTheme("light"));
+
+  // Real-time cross-tab sync
+  window.addEventListener("storage", e => {
+    if (e.key === "seap_theme") applySettingsTheme(e.newValue || "dark");
+  });
+
+  // ── Twilio SMS Toggle ─────────────────────────────────────────
+  const twilioSmsToggle = document.getElementById("twilioSmsToggle");
+  if (twilioSmsToggle) {
+    // Fetch current server-side state on load
+    fetch("/api/settings/twilio")
+      .then(r => r.json())
+      .then(d => {
+        twilioSmsToggle.checked = d.enabled;
+        sessionStorage.setItem("seap_twilioEnabled", d.enabled);
+      })
+      .catch(() => {});
+    twilioSmsToggle.addEventListener("change", () => {
+      const enabled = twilioSmsToggle.checked;
+      sessionStorage.setItem("seap_twilioEnabled", enabled);
+      // Sync to server
+      fetch("/api/settings/twilio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      }).catch(() => {});
+      showToast(
+        enabled ? "📱 Twilio SMS service enabled" : "📵 Twilio SMS service disabled — no charges will apply",
+        enabled ? "success" : "info",
+        3000
+      );
+    });
+  }
 
   clearDocsBtn.addEventListener("click", () => {
     const docs = profileCache.documents;

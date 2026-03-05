@@ -10,8 +10,15 @@
     />
     <link rel="stylesheet" href="css/global.css" />
     <link rel="stylesheet" href="css/dashboard.css" />
+    <script>
+      (function(){
+        if(localStorage.getItem('seap_theme')==='light')
+          document.documentElement.classList.add('light-mode');
+      })();
+    </script>
   </head>
   <body>
+    <script>if(localStorage.getItem('seap_theme')==='light')document.body.classList.add('light-mode');</script>
     <!-- Scanlines & Grid -->
     <div class="grid-bg"></div>
     <div class="scanlines"></div>
@@ -562,6 +569,45 @@
                 <span class="toggle-track"><span class="toggle-thumb"></span></span>
               </label>
             </div>
+
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-icon">📱</span>
+                <div>
+                  <div class="settings-row-title">Twilio SMS Service</div>
+                  <div class="settings-row-desc">Send SMS to emergency contact on SOS</div>
+                </div>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="twilioSmsToggle" checked />
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </label>
+            </div>
+
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-icon">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="28" height="28">
+                    <defs>
+                      <linearGradient id="tg-grad" x1="120" y1="0" x2="120" y2="240" gradientUnits="userSpaceOnUse">
+                        <stop offset="0" stop-color="#2AABEE"/>
+                        <stop offset="1" stop-color="#229ED9"/>
+                      </linearGradient>
+                    </defs>
+                    <circle cx="120" cy="120" r="120" fill="url(#tg-grad)"/>
+                    <path d="M176 68L152.6 172.4c-1.7 7.6-6.3 9.5-12.7 5.9l-35-25.8-16.9 16.3c-1.9 1.9-3.4 3.4-7 3.4l2.5-35.4 64.5-58.3c2.8-2.5-.6-3.9-4.3-1.4L77.4 128.6 43.8 118c-7.4-2.3-7.5-7.4 1.5-11l122.8-47.3c6.2-2.3 11.6 1.5 7.9 8.3z" fill="#fff"/>
+                  </svg>
+                </span>
+                <div>
+                  <div class="settings-row-title">Telegram Alert Service</div>
+                  <div class="settings-row-desc">Send Telegram message to emergency contact on SOS</div>
+                </div>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="telegramAlertToggle" checked />
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </label>
+            </div>
           </div>
 
           <!-- ── Data ── -->
@@ -606,6 +652,44 @@
     <script src="js/particles.js"></script>
     <script src="js/auth.js"></script>
     <script src="js/dashboard.js"></script>
+
+    <!-- ═══ ADD PHONE NUMBER MODAL ═══════════════════════════════ -->
+    <div id="addPhoneOverlay" style="
+      display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);
+      z-index:9999;align-items:center;justify-content:center;">
+      <div style="
+        background:var(--bg-card,#0d1117);border:1px solid var(--accent-orange,#ff6b35);
+        border-radius:14px;padding:28px 28px 24px;width:340px;max-width:95vw;
+        box-shadow:0 0 40px rgba(255,107,53,0.25);font-family:var(--font-tech,'Courier New'),monospace;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+          <div style="display:flex;align-items:center;gap:8px;font-size:0.85rem;color:var(--accent-orange,#ff6b35);letter-spacing:2px;font-weight:700;">
+            ✏️ EDIT PHONE NUMBER
+          </div>
+          <button onclick="closeAddPhoneModal()" style="background:none;border:none;color:var(--text-muted,#888);font-size:1.2rem;cursor:pointer;padding:0 4px;line-height:1;">✕</button>
+        </div>
+        <div id="addPhoneplaceName" style="font-size:0.78rem;color:var(--text-muted,#aaa);margin-bottom:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+        <input id="addPhoneInput" type="tel" placeholder="Enter phone number (e.g. +91 98765 43210)" style="
+          width:100%;box-sizing:border-box;padding:10px 12px;
+          background:var(--bg-dark,#161b22);border:1px solid var(--accent-orange,#ff6b35);
+          border-radius:8px;color:var(--text-primary,#eee);font-size:0.85rem;
+          font-family:inherit;outline:none;margin-bottom:16px;
+          transition:border-color 0.2s;" />
+        <div style="display:flex;gap:10px;">
+          <button onclick="closeAddPhoneModal()" style="
+            flex:1;padding:9px;background:transparent;border:1px solid var(--border-primary,#333);
+            border-radius:8px;color:var(--text-muted,#888);cursor:pointer;font-size:0.78rem;font-family:inherit;">
+            Cancel
+          </button>
+          <button onclick="saveAddedPhone()" style="
+            flex:2;padding:9px;background:var(--accent-orange,#ff6b35);border:none;
+            border-radius:8px;color:#fff;cursor:pointer;font-size:0.82rem;font-weight:700;
+            font-family:inherit;letter-spacing:1px;transition:opacity 0.2s;"
+            onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+            💾 SAVE NUMBER
+          </button>
+        </div>
+      </div>
+    </div>
     <!-- Google Maps API: key is loaded securely from server via /api/config -->
     <script>
       fetch("/api/config")
