@@ -100,10 +100,22 @@ function fileIcon(mimeType = "") {
   return "📁";
 }
 
+// ─── Lazy-load PDF.js from CDN (only when a PDF thumbnail is needed) ────────
+function loadPdfJs() {
+  return new Promise((resolve, reject) => {
+    if (typeof pdfjsLib !== "undefined") { resolve(); return; }
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
 // ─── PDF first-page thumbnail via PDF.js ─────────────────────
 async function generatePdfThumbnail(dataUrl, canvas) {
   try {
-    if (typeof pdfjsLib === "undefined") return;
+    await loadPdfJs();
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
     const loadingTask = pdfjsLib.getDocument(dataUrl);

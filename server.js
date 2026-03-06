@@ -70,6 +70,84 @@ function sendTelegramMessage(chatId, text) {
 }
 
 /**
+ * Send a file (document/image) via Telegram Bot API using multipart/form-data.
+ * Works with base64 data URLs stored in MongoDB — no extra npm packages needed.
+ * @param {string|number} chatId
+ * @param {string}        filename   — original filename e.g. "aadhar.pdf"
+ * @param {string}        mimeType   — e.g. "application/pdf" or "image/jpeg"
+ * @param {string}        base64Data — full data URL ("data:...;base64,...") or raw base64
+ * @param {string}        caption    — optional caption shown below the file
+ */
+function sendTelegramDocument(chatId, filename, mimeType, base64Data, caption) {
+  return new Promise((resolve, reject) => {
+    if (!TELEGRAM_BOT_TOKEN) return reject(new Error("TELEGRAM_BOT_TOKEN not set"));
+
+    // Strip the "data:...;base64," prefix if present
+    const raw = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
+    const fileBuffer = Buffer.from(raw, "base64");
+
+    const boundary = "----TgBoundary" + Date.now();
+    const CRLF = "\r\n";
+
+    // Build multipart parts as Buffers so binary file data isn't corrupted
+    const parts = [];
+
+    // chat_id field
+    parts.push(Buffer.from(
+      `--${boundary}${CRLF}` +
+      `Content-Disposition: form-data; name="chat_id"${CRLF}${CRLF}` +
+      `${chatId}${CRLF}`,
+      "utf8"
+    ));
+
+    // caption field (optional)
+    if (caption) {
+      parts.push(Buffer.from(
+        `--${boundary}${CRLF}` +
+        `Content-Disposition: form-data; name="caption"${CRLF}${CRLF}` +
+        `${caption}${CRLF}`,
+        "utf8"
+      ));
+    }
+
+    // document field
+    parts.push(Buffer.from(
+      `--${boundary}${CRLF}` +
+      `Content-Disposition: form-data; name="document"; filename="${filename}"${CRLF}` +
+      `Content-Type: ${mimeType || "application/octet-stream"}${CRLF}${CRLF}`,
+      "utf8"
+    ));
+    parts.push(fileBuffer);
+    parts.push(Buffer.from(`${CRLF}--${boundary}--${CRLF}`, "utf8"));
+
+    const fullBody = Buffer.concat(parts);
+
+    const options = {
+      hostname: "api.telegram.org",
+      path: `/bot${TELEGRAM_BOT_TOKEN}/sendDocument`,
+      method: "POST",
+      headers: {
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        "Content-Length": fullBody.length,
+      },
+    };
+
+    const req = https.request(options, (res) => {
+      let data = "";
+      res.on("data", chunk => (data += chunk));
+      res.on("end", () => {
+        try { resolve(JSON.parse(data)); }
+        catch (e) { reject(e); }
+      });
+    });
+
+    req.on("error", reject);
+    req.write(fullBody);
+    req.end();
+  });
+}
+
+/**
  * Register the Telegram webhook so the bot receives messages.
  * Called once on server startup.
  */
@@ -121,17 +199,32 @@ function setupTelegramWebhook() {
 }
 
 /**
+ * Escape HTML special characters so plain-text replies don't break Telegram's
+ * HTML parse mode (& < > must be escaped when parse_mode:"HTML" is used).
+ */
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/**
  * Send a prompt to LongCat AI and get a text reply.
  * @param {string} prompt
  * @returns {Promise<string>}
  */
-function longcatChat(prompt, timeoutMs = 6000) {
+function longcatChat(promptOrMessages, timeoutMs = 6000) {
   return new Promise((resolve, reject) => {
+    // Accept a plain string OR a messages array (system + user format)
+    const messages = Array.isArray(promptOrMessages)
+      ? promptOrMessages
+      : [{ role: "user", content: promptOrMessages }];
     const body = JSON.stringify({
       model: "LongCat-Flash-Chat",
-      messages: [{ role: "user", content: prompt }],
-      max_tokens: 120,      // was 300 — shorter = faster, SMS needs <280 chars
-      temperature: 0.3,     // was 0.7 — lower = faster & more deterministic
+      messages,
+      max_tokens: 200,
+      temperature: 0.3,
       stream: false,
     });
 
@@ -248,6 +341,19 @@ app.use(cors());
 app.use(bodyParser.json({ limit: '25mb' }));
 app.use(bodyParser.urlencoded({ limit: '25mb', extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
+
+// ─── Ngrok Bypass Middleware (for Twilio webhooks) ───────────────────────────
+// Adds ngrok-skip-browser-warning header to bypass ngrok's interstitial page
+// when Twilio makes webhook requests. Detects Twilio User-Agent automatically.
+app.use((req, res, next) => {
+  const userAgent = req.get("user-agent") || "";
+  // Check if request is from Twilio (User-Agent contains "TwilioProxy")
+  if (userAgent.includes("TwilioProxy") || userAgent.includes("Twilio")) {
+    // Set header to bypass ngrok warning for Twilio
+    req.headers["ngrok-skip-browser-warning"] = "1";
+  }
+  next();
+});
 
 // ─── IoT Device Simulation ────────────────────────────────────────────────────
 // Simulates a GPS IoT device sending real-time coordinates
@@ -534,9 +640,10 @@ app.post("/telegram/webhook", express.json(), async (req, res) => {
     }
 
     // ── Find matching user profile by Telegram chat_id ────────────────────
-    const allProfiles = await UserProfile.find({
-      emergencyContactTelegramChatId: { $exists: true, $ne: "" },
-    }).lean();
+    const allProfiles = await UserProfile.find(
+      { emergencyContactTelegramChatId: { $exists: true, $ne: "" } },
+      { photo: 0, "documents.data": 0 }  // exclude heavy base64 fields
+    ).lean();
 
     const matchedProfile = allProfiles.find(p =>
       String(p.emergencyContactTelegramChatId).trim() === String(chatId)
@@ -564,6 +671,26 @@ app.post("/telegram/webhook", express.json(), async (req, res) => {
       }
     }
 
+    // ── Build full profile context for AI (all fields + document labels) ──────
+    let profileContext = `Name: ${userName}`;
+    if (matchedProfile) {
+      if (matchedProfile.age)        profileContext += ` | Age: ${matchedProfile.age}`;
+      if (matchedProfile.gender)     profileContext += ` | Gender: ${matchedProfile.gender}`;
+      if (matchedProfile.bloodGroup) profileContext += ` | Blood Group: ${matchedProfile.bloodGroup}`;
+      if (matchedProfile.phone)      profileContext += ` | Phone: ${matchedProfile.phone}`;
+      if (matchedProfile.address)    profileContext += ` | Address: ${matchedProfile.address}`;
+      if (locationUrl)               profileContext += ` | Live Location: ${locationUrl}`;
+      else if (locationStr !== "unknown location") profileContext += ` | Last GPS: ${locationStr}`;
+      const ecN = matchedProfile.emergencyContactName  || "";
+      const ecP = matchedProfile.emergencyContactPhone || "";
+      if (ecN || ecP) profileContext += ` | Emergency Contact: ${ecN || "N/A"} (${ecP || "N/A"})`;
+      if (matchedProfile.documents?.length) {
+        const docList = matchedProfile.documents
+          .map(d => d.label || d.filename).filter(Boolean).join(", ");
+        if (docList) profileContext += ` | Documents on file: ${docList}`;
+      }
+    }
+
     // Log the reply
     await SOS.create({
       userId: matchedUserId || `telegram:${chatId}`,
@@ -580,39 +707,36 @@ app.post("/telegram/webhook", express.json(), async (req, res) => {
         : `📍 Location: ${locationStr}`) +
       `\n\nPlease reach them immediately or call emergency services (112).`;
 
+    let docsToSend = []; // documents to forward after the text reply
+
     if (aiAgentKey) {
       try {
-        const phone = matchedProfile?.phone || "";
-        const bg    = matchedProfile?.bloodGroup || "";
-        const age   = matchedProfile?.age || "";
-        const gender = matchedProfile?.gender || "";
-        const address = matchedProfile?.address || "";
+        const phone   = matchedProfile?.phone       || "";
+        const bg      = matchedProfile?.bloodGroup  || "";
+        const age     = matchedProfile?.age         || "";
+        const gender  = matchedProfile?.gender      || "";
+        const address = matchedProfile?.address     || "";
+        const ecName  = matchedProfile?.emergencyContactName  || "";
+        const ecPhone = matchedProfile?.emergencyContactPhone || "";
+        const docs    = matchedProfile?.documents   || [];
 
-        // Server-side direct answers — no AI needed for simple factual questions
+        // ── Fast direct answers (no AI call) for simple factual queries ──
         const q = text.toLowerCase();
         let directReply = "";
 
-        const ecName  = matchedProfile?.emergencyContactName  || "";
-        const ecPhone = matchedProfile?.emergencyContactPhone || "";
-
         if (/emergency.?contact|ec.?number|ec.?phone|contact.?number|contact.?name/.test(q)) {
-          // Emergency contact details
-          if (ecName || ecPhone) {
-            directReply = `${userName}'s emergency contact: ${ecName || "N/A"}, Phone: ${ecPhone || "N/A"}.`;
-          } else {
-            directReply = `${userName}'s emergency contact details are not set in their profile.`;
-          }
+          directReply = (ecName || ecPhone)
+            ? `${userName}'s emergency contact: ${ecName || "N/A"}, Phone: ${ecPhone || "N/A"}.`
+            : `${userName}'s emergency contact details are not set in their profile.`;
         } else if (/live.?loc|current.?loc|real.?time|gps|abhi.?kaha|\blocation\b|\bloc\b|where/.test(q) && !/address/.test(q)) {
-          // GPS / map location
           directReply = locationUrl
             ? `${userName}'s location: ${locationUrl}`
-            : `${userName}'s live GPS location is not being shared right now. Ask them to open the tracking app.`;
+            : `${userName}'s live GPS location is not being shared right now.`;
         } else if (/phone|number|mobile/.test(q)) {
           directReply = phone
             ? `${userName}'s phone number is ${phone}.`
             : `${userName}'s phone number is not set in their profile.`;
         } else if (/address|ghar|rahta|rehta|kaha.?rehta/.test(q)) {
-          // Profile saved address
           directReply = address
             ? `${userName}'s address: ${address}.`
             : `${userName}'s address is not set in their profile.`;
@@ -628,24 +752,47 @@ app.post("/telegram/webhook", express.json(), async (req, res) => {
           directReply = gender
             ? `${userName}'s gender is ${gender}.`
             : `${userName}'s gender is not set in their profile.`;
-        }
+        } else if (/document|doc|file|record|medical.?cert|certificate|report|send.?doc|bhejo|dikhao|show.?doc/.test(q)) {
+          // ── User wants actual documents sent — fetch base64 data from DB ──
+          const fullProfile = await UserProfile.findOne(
+            { userId: matchedUserId },
+            { documents: 1 }
+          ).lean().catch(() => null);
+          const allDocs = fullProfile?.documents || [];
+
+          if (!allDocs.length) {
+            directReply = `No documents are saved in ${userName}'s profile.`;
+          } else {
+            const withData = allDocs.filter(d => d.data);
+            if (!withData.length) {
+              directReply = `${userName} has ${allDocs.length} document label(s) but no file data stored.`;
+            } else {
+              // Set text reply first, then send files below
+              directReply = `📎 Sending ${withData.length} document(s) from ${userName}'s profile...`;
+              // Store docs so we send them after the text reply
+              docsToSend = withData;
+            }
+          }
+        } // end else-if document
 
         if (directReply) {
           aiReply = directReply;
           console.log("\x1b[32m%s\x1b[0m", `[AI Agent] Direct answer: ${aiReply}`);
         } else {
-          // AI for complex/unclear questions — answer only what was asked
-          const profileSummary =
-            `Name: ${userName} | Age: ${age || "?"} | Gender: ${gender || "?"} | Blood: ${bg || "?"} | Phone: ${phone || "not set"} | Address: ${address || "?"} | Location: ${locationStr}${locationUrl ? " (" + locationUrl + ")" : ""}`;
-
-          const prompt =
-            `You are an emergency info assistant. Answer ONLY what the emergency contact asked. Be direct and concise (≤250 chars). No greetings, no templates.\n` +
-            `Victim info: ${profileSummary}\n` +
-            `${fromName} asked: "${text}"\n` +
-            `Answer only the question asked. If you don't know, say so.`;
-
-          const aiText = await longcatChat(prompt);
-          if (aiText) aiReply = aiText.substring(0, 400);
+          // ── LongCat AI for open-ended / complex questions ──────────────
+          const aiText = await longcatChat([
+            {
+              role: "system",
+              content:
+                `You are SEAP Emergency AI. An emergency contact is asking about someone who triggered an SOS alert. ` +
+                `Answer ONLY what was asked. Use ONLY the profile data below. ` +
+                `Be direct and concise (max 3 sentences). No greetings, no filler. ` +
+                `If the data is not available in the profile, clearly say it is not set.\n\n` +
+                `Victim profile:\n${profileContext}`,
+            },
+            { role: "user", content: `${fromName} asked: "${text}"` },
+          ]);
+          if (aiText) aiReply = aiText.substring(0, 500);
           console.log("\x1b[32m%s\x1b[0m", `[AI Agent] Telegram reply: ${aiReply}`);
         }
       } catch (err) {
@@ -654,8 +801,30 @@ app.post("/telegram/webhook", express.json(), async (req, res) => {
     }
 
     // ── Send AI reply back to the emergency contact via Telegram ──────────
-    await sendTelegramMessage(chatId, aiReply);
-    console.log("\x1b[32m%s\x1b[0m", `[Telegram] Auto-reply sent to ${fromName} (chat_id: ${chatId})`);
+    // escapeHtml: prevents Telegram from rejecting the message if the AI
+    // generated text containing & < > characters (Bad Request: can't parse entities)
+    const tgReplyResult = await sendTelegramMessage(chatId, escapeHtml(aiReply));
+    if (tgReplyResult?.ok) {
+      console.log("\x1b[32m%s\x1b[0m", `[Telegram] Auto-reply sent to ${fromName} (chat_id: ${chatId})`);
+    } else {
+      console.error("[Telegram] Auto-reply FAILED for", fromName, "|", JSON.stringify(tgReplyResult));
+    }
+
+    // ── Forward actual document files if requested ────────────────────────
+    for (const doc of docsToSend) {
+      try {
+        const filename = doc.filename || doc.label || "document";
+        const caption  = doc.label   || doc.filename || "";
+        const result   = await sendTelegramDocument(chatId, filename, doc.mimeType, doc.data, caption);
+        if (result?.ok) {
+          console.log("\x1b[32m%s\x1b[0m", `[Telegram] Doc sent: ${filename} → chat_id: ${chatId}`);
+        } else {
+          console.error("[Telegram] Doc send FAILED:", filename, "|", JSON.stringify(result));
+        }
+      } catch (docErr) {
+        console.error("[Telegram] Doc send error:", docErr.message);
+      }
+    }
   } catch (err) {
     console.error("[Telegram Webhook Error]", err.message);
   }
@@ -752,6 +921,257 @@ mongoose.connection.once("open", async () => {
   }
 });
 
+// ─── Auto Call Service Toggle (MongoDB-persisted) ─────────────────────────────
+let callServiceEnabled = true; // in-memory cache
+
+// Load saved Call state from MongoDB on startup
+mongoose.connection.once("open", async () => {
+  try {
+    const callDoc = await AppSettings.findOne({ key: "callEnabled" });
+    if (callDoc !== null) {
+      callServiceEnabled = callDoc.value;
+      console.log(`\x1b[33m%s\x1b[0m`, `[AutoCall] Loaded saved state from DB: ${callServiceEnabled ? "ENABLED" : "DISABLED"}`);
+    }
+  } catch (e) {
+    console.warn("[AutoCall] Could not load saved state:", e.message);
+  }
+});
+
+app.get("/api/settings/call", (req, res) => {
+  res.json({ enabled: callServiceEnabled });
+});
+
+app.post("/api/settings/call", async (req, res) => {
+  try {
+    const { enabled } = req.body;
+    callServiceEnabled = enabled !== false && enabled !== "false";
+    await AppSettings.findOneAndUpdate(
+      { key: "callEnabled" },
+      { value: callServiceEnabled },
+      { upsert: true, new: true }
+    );
+    const st = callServiceEnabled ? "ENABLED" : "DISABLED";
+    console.log(`\x1b[33m%s\x1b[0m`, `[AutoCall] Service ${st} — saved to DB`);
+    res.json({ success: true, enabled: callServiceEnabled });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Could not save setting" });
+  }
+});
+
+// ─── Auto Call SOS — place outbound call to emergency contact ────────────────
+app.post("/api/call/sos", async (req, res) => {
+  if (!callServiceEnabled) {
+    console.log("\x1b[33m%s\x1b[0m", "[AutoCall] Service disabled — call not placed");
+    return res.json({ success: false, message: "Auto-call service is disabled" });
+  }
+
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken  = process.env.TWILIO_AUTH_TOKEN;
+  const fromNumber = process.env.TWILIO_FROM_NUMBER;
+
+  if (!accountSid || !authToken || !fromNumber) {
+    return res.status(500).json({ success: false, message: "Twilio credentials not configured" });
+  }
+
+  try {
+    const { userId, lat, lng } = req.body;
+    if (!userId) return res.status(400).json({ success: false, message: "userId required" });
+
+    const profile = await UserProfile.findOne({ userId }).lean();
+    if (!profile || !profile.emergencyContactPhone) {
+      return res.status(404).json({
+        success: false,
+        message: "No emergency contact phone configured. Please add it in Profile.",
+      });
+    }
+
+    const user = await User.findById(userId).lean().catch(() => null);
+    const userName = user?.name || "Someone";
+    const ecPhone  = profile.emergencyContactPhone.replace(/[\s\-().]/g, "");
+    const toNumber = ecPhone.startsWith("+") ? ecPhone : "+91" + ecPhone;
+
+    // Build the voice URL — server's own URL + /call/voice
+    // Detect public URL: use RENDER_EXTERNAL_URL (Render.com) > NGROK_DOMAIN > localhost fallback
+    const publicBase =
+      (process.env.RENDER_EXTERNAL_URL || "").trim() ||
+      (process.env.NGROK_DOMAIN || "").trim() ||
+      `http://localhost:${process.env.PORT || 3000}`;
+
+    const latVal = lat  || null;
+    const lngVal = lng  || null;
+
+    // Encode call info into query params so /call/voice can build the message
+    // ngrok-skip-browser-warning=1 bypasses ngrok's HTML interstitial so Twilio gets valid TwiML
+    const voiceUrl =
+      `${publicBase.replace(/\/$/, "")}/call/voice` +
+      `?ngrok-skip-browser-warning=1` +
+      `&name=${encodeURIComponent(userName)}` +
+      `&ec=${encodeURIComponent(profile.emergencyContactName || "Contact")}` +
+      (latVal && lngVal ? `&lat=${parseFloat(latVal).toFixed(5)}&lng=${parseFloat(lngVal).toFixed(5)}` : "");
+
+    let twilioClient;
+    try { twilioClient = require("twilio")(accountSid, authToken); }
+    catch (e) {
+      return res.status(500).json({ success: false, message: "Twilio package not installed. Run: npm install twilio" });
+    }
+
+    const call = await twilioClient.calls.create({
+      to:  toNumber,
+      from: fromNumber,
+      url: voiceUrl,
+      method: "GET",
+    });
+
+    console.log("\x1b[32m%s\x1b[0m", `[AutoCall] Call placed to ${toNumber} | SID: ${call.sid} | For: ${userName}`);
+
+    await SOS.create({
+      userId,
+      lat: latVal ? parseFloat(latVal) : undefined,
+      lng: lngVal ? parseFloat(lngVal) : undefined,
+      message: `[AUTO CALL] Outbound call placed to ${profile.emergencyContactName || toNumber} | SID: ${call.sid}`,
+      status: "call_placed",
+    });
+
+    res.json({ success: true, message: `Call placed to ${profile.emergencyContactName || toNumber}!`, sid: call.sid });
+  } catch (err) {
+    console.error("[AutoCall Error]", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── TwiML Voice Endpoint — called by Twilio when emergency contact picks up ─
+// Reads the SOS details aloud and prompts the contact; their spoken reply is
+// transcribed and answered by LongCat AI via another TwiML <Say>.
+app.get("/call/voice", async (req, res) => {
+  const name = req.query.name || "Someone";
+  const ec   = req.query.ec   || "Emergency Contact";
+  const lat  = req.query.lat  || null;
+  const lng  = req.query.lng  || null;
+
+  let locationText = "Their exact location details have been sent to you via S.M.S. Please check your messages for the Google Maps link.";
+  if (lat && lng) {
+    locationText = "Their exact location has been sent to you via S.M.S. Please check your messages for the live Google Maps link.";
+  }
+
+  const publicBase =
+    (process.env.RENDER_EXTERNAL_URL || "").trim() ||
+    (process.env.NGROK_DOMAIN || "").trim() ||
+    `http://localhost:${process.env.PORT || 3000}`;
+
+  const gatherAction =
+    `${publicBase.replace(/\/$/, "")}/call/respond` +
+    `?ngrok-skip-browser-warning=1&name=${encodeURIComponent(name)}&lat=${lat || ""}&lng=${lng || ""}` ;
+
+  // Main alert message — matches user-specified format exactly
+  const message =
+    `Hello ${ec}. ` +
+    `This is an automated emergency alert from the Smart Emergency Assistance Platform. ` +
+    `${name} has triggered an S.O.S. alert and may need immediate help. ` +
+    locationText +
+    ` Please try to contact them immediately, or call India's emergency helpline number 1 1 2. ` +
+    `You may now speak your question and our A.I. assistant will answer it. ` +
+    `For example, you can ask about their blood group, phone number, or address.`;
+
+  res.set("Content-Type", "text/xml");
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Joanna" language="en-IN">${message.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</Say>
+  <Gather input="speech" action="${gatherAction}" method="POST" timeout="25" speechTimeout="auto" language="en-IN" finishOnKey="">
+    <Say voice="Polly.Joanna" language="en-IN">Please ask your question now.</Say>
+  </Gather>
+  <Say voice="Polly.Joanna" language="en-IN">No input received. Please stay safe and contact emergency services. Goodbye.</Say>
+</Response>`);
+});
+
+// ─── TwiML Voice Action — handles speech input and responds with AI answer ────
+app.post("/call/respond", express.urlencoded({ extended: false }), async (req, res) => {
+  const question = (req.body.SpeechResult || "").trim();
+  const name     = req.query.name || "the person in distress";
+  const lat      = req.query.lat  || null;
+  const lng      = req.query.lng  || null;
+
+  let answer = `I'm sorry, I didn't catch that. Please call emergency services on 1 1 2 for immediate help.`;
+
+  if (question) {
+    try {
+      // Look up profile by username (best effort)
+      const allProfiles = await UserProfile.find({}).lean();
+      let matchedProfile = null;
+
+      // Try to find the profile matching this call's user
+      if (lat && lng) {
+        const latF = parseFloat(lat);
+        const lngF = parseFloat(lng);
+        const latestSOS = await SOS.findOne({
+          lat: { $gte: latF - 0.001, $lte: latF + 0.001 },
+          lng: { $gte: lngF - 0.001, $lte: lngF + 0.001 },
+        }).sort({ timestamp: -1 }).lean().catch(() => null);
+        if (latestSOS?.userId) {
+          matchedProfile = allProfiles.find(p => String(p.userId) === String(latestSOS.userId)) || null;
+        }
+      }
+
+      const phone   = matchedProfile?.phone || "";
+      const bg      = matchedProfile?.bloodGroup || "";
+      const age     = matchedProfile?.age || "";
+      const gender  = matchedProfile?.gender || "";
+      const address = matchedProfile?.address || "";
+      const locationStr = (lat && lng) ? `${parseFloat(lat).toFixed(4)}, ${parseFloat(lng).toFixed(4)}` : "unknown";
+
+      const q = question.toLowerCase();
+
+      // Direct answers — no AI needed
+      if (/blood|group/.test(q)) {
+        answer = bg ? `${name}'s blood group is ${bg}.` : `${name}'s blood group is not set in their profile.`;
+      } else if (/phone|number|mobile|call/.test(q)) {
+        answer = phone ? `${name}'s phone number is ${phone}.` : `${name}'s phone number is not available.`;
+      } else if (/address|where|location|kahan|ghar/.test(q)) {
+        answer = address ? `${name}'s address is ${address}.` : (lat && lng ? `${name}'s GPS coordinates are ${locationStr}.` : `Location not available.`);
+      } else if (/age|old/.test(q)) {
+        answer = age ? `${name} is ${age} years old.` : `${name}'s age is not available.`;
+      } else if (/gender|male|female/.test(q)) {
+        answer = gender ? `${name}'s gender is ${gender}.` : `${name}'s gender is not available.`;
+      } else if (aiAgentKey) {
+        const profileSummary = `Name: ${name} | Age: ${age||"?"} | Gender: ${gender||"?"} | Blood: ${bg||"?"} | Phone: ${phone||"not set"} | Address: ${address||"?"} | Location: ${locationStr}`;
+        const prompt =
+          `You are an emergency voice AI assistant responding on a phone call. Answer ONLY what was asked. Be very concise (max 2 sentences, no markdown, no symbols).\n` +
+          `Victim info: ${profileSummary}\n` +
+          `Question: "${question}"\n` +
+          `Answer:`;
+        try {
+          const aiText = await longcatChat(prompt, 8000);
+          if (aiText) answer = aiText.replace(/[*#_`]/g, "").substring(0, 300);
+        } catch (e) {
+          console.warn("[Call AI] Error:", e.message);
+        }
+      }
+    } catch (err) {
+      console.error("[Call Respond Error]", err.message);
+    }
+  }
+
+  console.log("\x1b[32m%s\x1b[0m", `[AutoCall] Voice Q: "${question}" → A: "${answer}"`);
+
+  const publicBase =
+    (process.env.RENDER_EXTERNAL_URL || "").trim() ||
+    (process.env.NGROK_DOMAIN || "").trim() ||
+    `http://localhost:${process.env.PORT || 3000}`;
+
+  const loopAction =
+    `${publicBase.replace(/\/$/, "")}/call/respond` +
+    `?ngrok-skip-browser-warning=1&name=${encodeURIComponent(name)}&lat=${lat || ""}&lng=${lng || ""}`;
+
+  res.set("Content-Type", "text/xml");
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Joanna" language="en-IN">${answer.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</Say>
+  <Gather input="speech" action="${loopAction}" method="POST" timeout="10" speechTimeout="auto" language="en-IN" finishOnKey="">
+    <Say voice="Polly.Joanna" language="en-IN">You can ask another question, or stay on the line.</Say>
+  </Gather>
+  <Say voice="Polly.Joanna" language="en-IN">Stay safe. Help is on the way. Goodbye.</Say>
+</Response>`);
+});
+
 app.get("/api/settings/telegram", (req, res) => {
   res.json({ enabled: telegramServiceEnabled });
 });
@@ -797,6 +1217,7 @@ app.post("/sms/incoming", express.urlencoded({ extended: false }), async (req, r
   let locationStr     = "unknown location";
   let locationUrl     = "";
   let matchedUserId   = null;
+  let matchedProfile  = null; // hoisted so it's accessible in the AI block below
 
   try {
     // Normalise phone: strip spaces/dashes for comparison
@@ -804,11 +1225,12 @@ app.post("/sms/incoming", express.urlencoded({ extended: false }), async (req, r
     const fromNorm  = normalise(from);
 
     // Find the UserProfile whose emergencyContactPhone matches the sender
-    const allProfiles = await UserProfile.find({
-      emergencyContactPhone: { $exists: true, $ne: "" },
-    }).lean();
+    const allProfiles = await UserProfile.find(
+      { emergencyContactPhone: { $exists: true, $ne: "" } },
+      { photo: 0, "documents.data": 0 }  // exclude heavy base64 fields
+    ).lean();
 
-    const matchedProfile = allProfiles.find(p => {
+    matchedProfile = allProfiles.find(p => {
       return normalise(p.emergencyContactPhone) === fromNorm;
     });
 
@@ -840,6 +1262,26 @@ app.post("/sms/incoming", express.urlencoded({ extended: false }), async (req, r
     console.error("[SMS Incoming] Profile lookup error:", e.message);
   }
 
+  // ── Build full profile context for AI (all fields + document labels) ──────
+  let profileContext = `Name: ${userName}`;
+  if (matchedProfile) {
+    if (matchedProfile.age)        profileContext += ` | Age: ${matchedProfile.age}`;
+    if (matchedProfile.gender)     profileContext += ` | Gender: ${matchedProfile.gender}`;
+    if (matchedProfile.bloodGroup) profileContext += ` | Blood Group: ${matchedProfile.bloodGroup}`;
+    if (matchedProfile.phone)      profileContext += ` | Phone: ${matchedProfile.phone}`;
+    if (matchedProfile.address)    profileContext += ` | Address: ${matchedProfile.address}`;
+    if (locationUrl)               profileContext += ` | Live Location: ${locationUrl}`;
+    else if (locationStr !== "unknown location") profileContext += ` | Last GPS: ${locationStr}`;
+    const ecN = matchedProfile.emergencyContactName  || "";
+    const ecP = matchedProfile.emergencyContactPhone || "";
+    if (ecN || ecP) profileContext += ` | Emergency Contact: ${ecN || "N/A"} (${ecP || "N/A"})`;
+    if (matchedProfile.documents?.length) {
+      const docList = matchedProfile.documents
+        .map(d => d.label || d.filename).filter(Boolean).join(", ");
+      if (docList) profileContext += ` | Documents on file: ${docList}`;
+    }
+  }
+
   // ── Save incoming SMS to SOS log so it appears in the dashboard ──────────
   try {
     await SOS.create({
@@ -856,26 +1298,37 @@ app.post("/sms/incoming", express.urlencoded({ extended: false }), async (req, r
 
   if (aiAgentKey) {
     try {
-      const phone  = matchedProfile?.phone || "";
-      const bg     = matchedProfile?.bloodGroup || "";
-      const age    = matchedProfile?.age || "";
-      const gender = matchedProfile?.gender || "";
-      const address = matchedProfile?.address || "";
+      const phone   = matchedProfile?.phone       || "";
+      const bg      = matchedProfile?.bloodGroup  || "";
+      const age     = matchedProfile?.age         || "";
+      const gender  = matchedProfile?.gender      || "";
+      const address = matchedProfile?.address     || "";
+      const docs    = matchedProfile?.documents   || [];
 
-      // Server-side direct answers — no AI needed for simple factual questions
+      // ── Fast direct answers for simple factual queries (no AI call) ──
       const q = msgBody.toLowerCase();
       let directReply = "";
 
-      if (/phone|number|mobile|contact/.test(q)) {
+      if (/phone|number|mobile/.test(q) && !/emergency.?contact/.test(q)) {
         directReply = phone
           ? `${userName}'s phone number is ${phone}.`
           : `${userName}'s phone number is not set in their profile.`;
-      } else if (/kaha|kha|where|location|loc|address/.test(q)) {
+      } else if (/emergency.?contact|ec.?number|ec.?phone/.test(q)) {
+        const ecN = matchedProfile?.emergencyContactName  || "";
+        const ecP = matchedProfile?.emergencyContactPhone || "";
+        directReply = (ecN || ecP)
+          ? `${userName}'s emergency contact: ${ecN || "N/A"}, Phone: ${ecP || "N/A"}.`
+          : `${userName}'s emergency contact is not set.`;
+      } else if (/kaha|kha|where|location|loc/.test(q) && !/address/.test(q)) {
         directReply = locationUrl
           ? `${userName}'s last known location: ${locationUrl}`
           : address
             ? `${userName}'s address: ${address}. Live location not available.`
             : `${userName}'s live location is not available right now.`;
+      } else if (/address|ghar|rahta|rehta/.test(q)) {
+        directReply = address
+          ? `${userName}'s address: ${address}.`
+          : `${userName}'s address is not set in their profile.`;
       } else if (/blood|group|bloodgroup/.test(q)) {
         directReply = bg
           ? `${userName}'s blood group is ${bg}.`
@@ -888,24 +1341,35 @@ app.post("/sms/incoming", express.urlencoded({ extended: false }), async (req, r
         directReply = gender
           ? `${userName}'s gender is ${gender}.`
           : `${userName}'s gender is not set in their profile.`;
+      } else if (/document|doc|file|record|medical.?cert|certificate|report/.test(q)) {
+        if (docs.length) {
+          const docList = docs.map(d => d.label || d.filename).filter(Boolean).join(", ");
+          directReply = docList
+            ? `${userName}'s documents on file: ${docList}.`
+            : `${userName} has ${docs.length} document(s) saved.`;
+        } else {
+          directReply = `No documents are saved in ${userName}'s profile.`;
+        }
       }
 
       if (directReply) {
         aiReply = directReply;
         console.log("\x1b[32m%s\x1b[0m", `[AI Agent] Direct answer: ${aiReply}`);
       } else {
-        // AI for complex/unclear questions — answer only what was asked
-        const profileSummary =
-          `Name: ${userName} | Age: ${age || "?"} | Gender: ${gender || "?"} | Blood: ${bg || "?"} | Phone: ${phone || "not set"} | Address: ${address || "?"} | Location: ${locationStr}${locationUrl ? " (" + locationUrl + ")" : ""}`;
-
-        const prompt =
-          `You are an emergency info assistant. Answer ONLY what the emergency contact asked. Be direct and concise (≤220 chars). No greetings, no templates.\n` +
-          `Victim info: ${profileSummary}\n` +
-          `${ecName} asked: "${msgBody}"\n` +
-          `Answer only the question asked. If you don't know, say so.`;
-
-        const text = await longcatChat(prompt);
-        if (text) aiReply = text.substring(0, 320);
+        // ── LongCat AI for open-ended questions ──
+        const aiText = await longcatChat([
+          {
+            role: "system",
+            content:
+              `You are SEAP Emergency AI. An emergency contact just sent an SMS about someone who triggered an SOS alert. ` +
+              `Answer ONLY what was asked. Use ONLY the profile data below. ` +
+              `Be direct and concise (max 3 sentences). No greetings, no filler. ` +
+              `If the data is not available in the profile, clearly say it is not set.\n\n` +
+              `Victim profile:\n${profileContext}`,
+          },
+          { role: "user", content: `${ecName} asked: "${msgBody}"` },
+        ]);
+        if (aiText) aiReply = aiText.substring(0, 320);
         console.log("\x1b[32m%s\x1b[0m", `[AI Agent] LongCat reply: ${aiReply}`);
       }
     } catch (err) {

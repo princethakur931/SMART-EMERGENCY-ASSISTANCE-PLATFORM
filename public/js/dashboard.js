@@ -1693,7 +1693,7 @@ async function sendEmergencyContactTelegram() {
     const tgData = await tgRes.json();
 
     if (tgData.success) {
-      showToast(`✈️ Telegram SOS sent to ${ecName}! They will receive an AI-guided reply.`, "success", 7000);
+      showToast(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="18" height="18" style="vertical-align:middle;margin-right:4px;border-radius:50%"><defs><linearGradient id="tg-t" x1="120" y1="0" x2="120" y2="240" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#2AABEE"/><stop offset="1" stop-color="#229ED9"/></linearGradient></defs><circle cx="120" cy="120" r="120" fill="url(#tg-t)"/><path d="M176 68L152.6 172.4c-1.7 7.6-6.3 9.5-12.7 5.9l-35-25.8-16.9 16.3c-1.9 1.9-3.4 3.4-7 3.4l2.5-35.4 64.5-58.3c2.8-2.5-.6-3.9-4.3-1.4L77.4 128.6 43.8 118c-7.4-2.3-7.5-7.4 1.5-11l122.8-47.3c6.2-2.3 11.6 1.5 7.9 8.3z" fill="#fff"/></svg> Telegram SOS sent to ${ecName}! They will receive an AI-guided reply.`, "success", 7000);
     } else {
       showToast(`⚠️ Telegram alert failed: ${tgData.message}`, "warning", 8000);
     }
@@ -1705,7 +1705,7 @@ async function sendEmergencyContactTelegram() {
 
 // Called by the dedicated TELEGRAM ALERT button on the dashboard
 async function triggerTelegramSOS() {
-  showToast("✈️ Sending Telegram emergency alert...", "info", 3000);
+  showToast(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="16" height="16" style="vertical-align:middle;margin-right:4px;border-radius:50%"><defs><linearGradient id="tg-s" x1="120" y1="0" x2="120" y2="240" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#2AABEE"/><stop offset="1" stop-color="#229ED9"/></linearGradient></defs><circle cx="120" cy="120" r="120" fill="url(#tg-s)"/><path d="M176 68L152.6 172.4c-1.7 7.6-6.3 9.5-12.7 5.9l-35-25.8-16.9 16.3c-1.9 1.9-3.4 3.4-7 3.4l2.5-35.4 64.5-58.3c2.8-2.5-.6-3.9-4.3-1.4L77.4 128.6 43.8 118c-7.4-2.3-7.5-7.4 1.5-11l122.8-47.3c6.2-2.3 11.6 1.5 7.9 8.3z" fill="#fff"/></svg> Sending Telegram emergency alert...`, "info", 3000);
   await sendEmergencyContactTelegram();
 
   // Log to backend
@@ -1723,6 +1723,38 @@ async function triggerTelegramSOS() {
   } catch (e) { /* silent */ }
 }
 window.triggerTelegramSOS = triggerTelegramSOS;
+
+// ─── Auto Call to Emergency Contact on SOS ────────────────────
+async function sendEmergencyContactCall() {
+  try {
+    // Check Auto Call toggle — if disabled, skip silently
+    const callToggleEl = document.getElementById("autoCallToggle");
+    if (callToggleEl && !callToggleEl.checked) {
+      console.log("[AutoCall] Disabled via Settings — skipping call");
+      return;
+    }
+
+    const res  = await fetch("/api/call/sos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: CURRENT_USER?.id,
+        lat: state.lat,
+        lng: state.lng,
+      }),
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      showToast(`📞 Emergency contact is being called! AI will answer their questions.`, "success", 7000);
+    } else {
+      showToast(`⚠️ Auto-call failed: ${data.message}`, "warning", 6000);
+    }
+  } catch (err) {
+    console.warn("sendEmergencyContactCall error:", err);
+    showToast("⚠️ Could not place call to emergency contact.", "warning", 5000);
+  }
+}
 
 // ─── Send SMS to Emergency Contact ───────────────────────────
 async function sendEmergencyContactSMS() {
@@ -1871,6 +1903,9 @@ async function triggerSOS() {
   // ─── Send Telegram Alert to Emergency Contact ───────────────
   sendEmergencyContactTelegram();
 
+  // ─── Auto Call Emergency Contact ────────────────────────────
+  sendEmergencyContactCall();
+
   const logEntry = {
     id: Date.now(),
     time: new Date().toLocaleTimeString(),
@@ -2015,10 +2050,12 @@ window.sendBrowserNotif = sendBrowserNotif;
 
   // ── SOS Sound Alert Toggle ────────────────────────────────────
   const sosSoundToggle = document.getElementById("sosSoundToggle");
-  const savedSosSound = sessionStorage.getItem("seap_sosSound");
+  // Load saved preference from localStorage (persists across server restarts)
+  const savedSosSound = localStorage.getItem("seap_sosSound");
   if (savedSosSound === "false") sosSoundToggle.checked = false;
   sosSoundToggle.addEventListener("change", () => {
-    sessionStorage.setItem("seap_sosSound", sosSoundToggle.checked);
+    // Save to localStorage (permanent storage)
+    localStorage.setItem("seap_sosSound", sosSoundToggle.checked);
     if (!sosSoundToggle.checked && state.sosActive) {
       stopSosAlarm();
     }
@@ -2073,7 +2110,27 @@ window.sendBrowserNotif = sendBrowserNotif;
       body: JSON.stringify({ enabled }),
     }).catch(() => {});
     showToast(
-      enabled ? "✈️ Telegram alert service enabled" : "✈️ Telegram alert service disabled",
+      enabled ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="16" height="16" style="vertical-align:middle;margin-right:4px;border-radius:50%"><defs><linearGradient id="tg-tog" x1="120" y1="0" x2="120" y2="240" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#2AABEE"/><stop offset="1" stop-color="#229ED9"/></linearGradient></defs><circle cx="120" cy="120" r="120" fill="url(#tg-tog)"/><path d="M176 68L152.6 172.4c-1.7 7.6-6.3 9.5-12.7 5.9l-35-25.8-16.9 16.3c-1.9 1.9-3.4 3.4-7 3.4l2.5-35.4 64.5-58.3c2.8-2.5-.6-3.9-4.3-1.4L77.4 128.6 43.8 118c-7.4-2.3-7.5-7.4 1.5-11l122.8-47.3c6.2-2.3 11.6 1.5 7.9 8.3z" fill="#fff"/></svg> Telegram alert service enabled` : `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="16" height="16" style="vertical-align:middle;margin-right:4px;border-radius:50%;opacity:0.5"><defs><linearGradient id="tg-tog2" x1="120" y1="0" x2="120" y2="240" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#2AABEE"/><stop offset="1" stop-color="#229ED9"/></linearGradient></defs><circle cx="120" cy="120" r="120" fill="url(#tg-tog2)"/><path d="M176 68L152.6 172.4c-1.7 7.6-6.3 9.5-12.7 5.9l-35-25.8-16.9 16.3c-1.9 1.9-3.4 3.4-7 3.4l2.5-35.4 64.5-58.3c2.8-2.5-.6-3.9-4.3-1.4L77.4 128.6 43.8 118c-7.4-2.3-7.5-7.4 1.5-11l122.8-47.3c6.2-2.3 11.6 1.5 7.9 8.3z" fill="#fff"/></svg> Telegram alert service disabled`,
+      enabled ? "success" : "info",
+      3000
+    );
+  });
+
+  // ── Auto Call Toggle ──────────────────────────────────────────
+  const autoCallToggle = document.getElementById("autoCallToggle");
+  fetch("/api/settings/call")
+    .then(r => r.json())
+    .then(d => { autoCallToggle.checked = d.enabled; })
+    .catch(() => {});
+  autoCallToggle.addEventListener("change", () => {
+    const enabled = autoCallToggle.checked;
+    fetch("/api/settings/call", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    }).catch(() => {});
+    showToast(
+      enabled ? "📞 Auto call on SOS enabled" : "📵 Auto call on SOS disabled",
       enabled ? "success" : "info",
       3000
     );
