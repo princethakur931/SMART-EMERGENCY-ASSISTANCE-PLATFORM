@@ -1048,9 +1048,26 @@ app.get("/call/voice", async (req, res) => {
   const lat  = req.query.lat  || null;
   const lng  = req.query.lng  || null;
 
-  let locationText = "Their exact location details have been sent to you via S.M.S. Please check your messages for the Google Maps link.";
+  let locationText = "Currently unknown, but their tracking details have been sent to you via S.M.S.";
   if (lat && lng) {
-    locationText = "Their exact location has been sent to you via S.M.S. Please check your messages for the live Google Maps link.";
+    // Try to get the actual address using Google Maps Reverse Geocoding
+    try {
+      const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+      const getAddressUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${apiKey}`;
+      const response = await fetch(getAddressUrl);
+      const data = await response.json();
+      
+      if (data.status === 'OK' && data.results && data.results[0]) {
+        // Extract a readable short address or full formatted address
+        const address = data.results[0].formatted_address;
+        locationText = `${address}. Their live Google Maps tracking link has also been sent to you via S.M.S.`;
+      } else {
+        locationText = `at Latitude ${lat} and Longitude ${lng}. A live Google Maps tracking link has been sent to you via S.M.S.`;
+      }
+    } catch (e) {
+      console.error("Geocoding failed for voice alert:", e);
+      locationText = `recorded on our system. A live Google Maps tracking link has been sent to you via S.M.S.`;
+    }
   }
 
   const publicBase =
@@ -1067,16 +1084,16 @@ app.get("/call/voice", async (req, res) => {
     `Hello ${ec}. ` +
     `This is an automated emergency alert from the Smart Emergency Assistance Platform. ` +
     `${name} has triggered an S.O.S. alert and may need immediate help. ` +
-    locationText +
-    ` Please try to contact them immediately, or call India's emergency helpline number 1 1 2. ` +
-    `You may now speak your question and our A.I. assistant will answer it. ` +
+    `Their last known location is: ${locationText}\n` +
+    `Please try to contact them immediately, or call India's emergency helpline number 1 1 2 if urgent assistance is required. ` +
+    `You may now ask any question, and our AI assistant will try to provide the available information. ` +
     `For example, you can ask about their blood group, phone number, or address.`;
 
   res.set("Content-Type", "text/xml");
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="Polly.Joanna" language="en-IN">${message.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</Say>
-  <Gather input="speech" action="${gatherAction}" method="POST" timeout="25" speechTimeout="auto" language="en-IN" finishOnKey="">
+  <Gather input="speech" action="${gatherAction.replace(/&/g,"&amp;")}" method="POST" timeout="25" speechTimeout="auto" language="en-IN" finishOnKey="">
     <Say voice="Polly.Joanna" language="en-IN">Please ask your question now.</Say>
   </Gather>
   <Say voice="Polly.Joanna" language="en-IN">No input received. Please stay safe and contact emergency services. Goodbye.</Say>
@@ -1165,7 +1182,7 @@ app.post("/call/respond", express.urlencoded({ extended: false }), async (req, r
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="Polly.Joanna" language="en-IN">${answer.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</Say>
-  <Gather input="speech" action="${loopAction}" method="POST" timeout="10" speechTimeout="auto" language="en-IN" finishOnKey="">
+  <Gather input="speech" action="${loopAction.replace(/&/g,"&amp;")}" method="POST" timeout="10" speechTimeout="auto" language="en-IN" finishOnKey="">
     <Say voice="Polly.Joanna" language="en-IN">You can ask another question, or stay on the line.</Say>
   </Gather>
   <Say voice="Polly.Joanna" language="en-IN">Stay safe. Help is on the way. Goodbye.</Say>
