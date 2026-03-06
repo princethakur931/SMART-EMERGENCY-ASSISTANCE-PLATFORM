@@ -1771,8 +1771,9 @@ async function sendEmergencyContactSMS() {
       return;
     }
 
-    const locationUrl  = `https://maps.google.com/?q=${state.lat.toFixed(6)},${state.lng.toFixed(6)}`;
-    const smsBody      = `🚨 SOS ALERT! ${CURRENT_USER?.name || "Someone"} needs IMMEDIATE help!\nLocation: ${locationUrl}\nTime: ${new Date().toLocaleString("en-IN")}`;
+    const userName     = CURRENT_USER?.name || "Someone";
+    const locationUrl  = `https://maps.google.com/?q=${state.lat.toFixed(5)},${state.lng.toFixed(5)}`;
+    const smsBody      = `🚨 EMERGENCY SOS ALERT 🚨\n\n${userName} has triggered an emergency SOS and may need immediate assistance.\n\n⏰ Time: ${new Date().toLocaleString("en-IN")}\n\n📍 Last Known Location:\n${locationUrl}\n\n⚠ Immediate Action Required:\nPlease contact ${userName} immediately or reach the location.\n\nIf the situation is critical, please contact emergency services (112).\n\nReply to this message — our AI assistant will guide you on the next steps.`;
 
     // Check Twilio SMS toggle — if disabled, skip SMS entirely
     const twilioToggleEl = document.getElementById("twilioSmsToggle");

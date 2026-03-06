@@ -210,6 +210,174 @@ function escapeHtml(str) {
 }
 
 /**
+ * Calculate distance between two coordinates using the Real Road Distance API (OSRM)
+ * Fallback to Haversine straight-line if API fails
+ */
+async function calculateRealRoadDistance(lat1, lon1, lat2, lon2) {
+  const https = require("https");
+  
+  const fetchOsrmRaw = (url) => new Promise((resolve) => {
+    https.get(url, { headers: { 'User-Agent': 'SEAP-Emergency-Bot/1.0' } }, (res) => {
+      let body = "";
+      res.on("data", chunk => body += chunk);
+      res.on("end", () => {
+        try { resolve(JSON.parse(body)); }
+        catch (e) { resolve(null); }
+      });
+    }).on("error", () => resolve(null));
+  });
+
+  try {
+    const url = `https://router.project-osrm.org/route/v1/driving/${lon1},${lat1};${lon2},${lat2}?overview=false`;
+    const data = await fetchOsrmRaw(url);
+    if (data && data.code === "Ok" && data.routes && data.routes.length > 0) {
+      const distM = data.routes[0].distance;
+      if (distM != null && distM > 10) {
+        return (distM / 1000).toFixed(2); // return in km with 2 decimals
+      }
+    }
+  } catch (err) {
+    // ignore and fallback
+  }
+
+  // Fallback to Haversine strictly if OSRM fails
+  const R = 6371; // Radius of the earth in km
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return (R * c).toFixed(2);
+}
+
+/**
+ * Fetch nearest facility (hospital or police) using Google Places API.
+ * Falls back to Overpass API (OpenStreetMap) if standard Maps API is forbidden.
+ */
+async function getNearestFacilities(lat, lng, type, limit = 1, specificName = "") {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  const https = require("https");
+
+  // Helper to make https GET requests returning a Promise
+  const fetchJson = (url) => new Promise((resolve) => {
+    https.get(url, { headers: { 'User-Agent': 'SEAP-Emergency-Bot/1.0' } }, (res) => {
+      let body = "";
+      res.on("data", chunk => body += chunk);
+      res.on("end", () => {
+        try { resolve(JSON.parse(body)); }
+        catch (e) { resolve(null); }
+      });
+    }).on("error", () => resolve(null));
+  });
+
+  let facilities = [];
+
+  // 1. Try Google Places API
+  if (apiKey) {
+    try {
+      const keyword = specificName ? specificName : (type === "hospital" ? "hospital|clinic|emergency" : "police station");
+      const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=15000&keyword=${encodeURIComponent(keyword)}&key=${apiKey}`;
+      
+      const data = await fetchJson(url);
+      if (data && data.status === "OK" && data.results.length > 0) {
+        const topResults = data.results.slice(0, limit);
+        
+        facilities = await Promise.all(topResults.map(async (place) => {
+          // Fetch details to get phone number
+          const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${place.place_id}&fields=name,formatted_address,formatted_phone_number,international_phone_number,geometry&key=${apiKey}`;
+          const detailsData = await fetchJson(detailsUrl);
+          
+          let phone = "Not available (Not in API/DB)";
+          if (detailsData && detailsData.status === "OK") {
+            if (detailsData.result.formatted_phone_number) {
+              phone = detailsData.result.formatted_phone_number;
+            } else if (detailsData.result.international_phone_number) {
+              phone = detailsData.result.international_phone_number;
+            }
+          }
+                        
+          return {
+            name: place.name,
+            address: place.vicinity || (detailsData?.result?.formatted_address) || "Local Area",
+            phone: phone,
+            lat: place.geometry?.location?.lat,
+            lng: place.geometry?.location?.lng,
+            place_id: place.place_id,
+            distance: await calculateRealRoadDistance(lat, lng, place.geometry?.location?.lat, place.geometry?.location?.lng)
+          };
+        }));
+        
+        return facilities;
+      }
+    } catch (err) {
+      console.error("Places API error:", err.message);
+    }
+  }
+
+  // 2. Fallback to Overpass API (OpenStreetMap) if Places API fails
+  try {
+    const amenity = type === "hospital" ? "hospital" : "police";
+    const query = `[out:json][timeout:10];(node["amenity"="${amenity}"](around:5000,${lat},${lng});way["amenity"="${amenity}"](around:5000,${lat},${lng}););out center;`;
+    const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
+    
+    const data = await fetchJson(url);
+    if (data && data.elements && data.elements.length > 0) {
+      let validPlaces = data.elements.filter(e => e.tags && e.tags.name);
+      if (validPlaces.length > 0) {
+        validPlaces.sort((a, b) => {
+          const aLat = a.lat || a.center?.lat;
+          const aLng = a.lon || a.center?.lon;
+          const bLat = b.lat || b.center?.lat;
+          const bLng = b.lon || b.center?.lon;
+          return (Math.pow(aLat - lat, 2) + Math.pow(aLng - lng, 2)) - (Math.pow(bLat - lat, 2) + Math.pow(bLng - lng, 2));
+        });
+        
+        facilities = await Promise.all(validPlaces.slice(0, limit).map(async (place) => {
+          const pLat = place.lat || place.center?.lat;
+          const pLng = place.lon || place.center?.lon;
+          return {
+             name: place.tags.name,
+             address: place.tags["addr:full"] || place.tags["addr:street"] || place.tags["addr:city"] || "Local Area",
+             phone: place.tags["phone"] || place.tags["contact:phone"] || "Not available (Not in API/DB)",
+             lat: pLat,
+             lng: pLng,
+             place_id: String(place.id),
+             distance: await calculateRealRoadDistance(lat, lng, pLat, pLng)
+          };
+        }));
+        
+        // No return yet, let next block handle DB checks
+      }
+    }
+  } catch(err) {
+    console.error("Overpass fallback error:", err.message);
+  }
+
+  // 3. Attach user-added phone numbers from the Database (if any)
+  if (facilities.length > 0) {
+    try {
+      const PlacePhone = mongoose.models.PlacePhone || mongoose.model("PlacePhone");
+      const pIds = facilities.map(f => String(f.place_id));
+      const customPhones = await PlacePhone.find({ placeId: { $in: pIds } }).lean();
+      
+      const phoneMap = {};
+      customPhones.forEach(cp => { phoneMap[cp.placeId] = cp.phone; });
+      
+      facilities.forEach(f => {
+        if (f.place_id && phoneMap[String(f.place_id)]) {
+          f.phone = phoneMap[String(f.place_id)];
+        }
+      });
+    } catch (dbErr) {
+      console.error("[Telegram] Error fetching custom phones:", dbErr.message);
+    }
+  }
+
+  return facilities.length > 0 ? facilities : null;
+}
+
+/**
  * Send a prompt to LongCat AI and get a text reply.
  * @param {string} prompt
  * @returns {Promise<string>}
@@ -564,18 +732,20 @@ app.post("/api/telegram/send-sos", async (req, res) => {
     // Build location info
     const latVal  = lat  || profile.lat  || null;
     const lngVal  = lng  || profile.lng  || null;
-    let locationLine = "";
+    let locationLine = "Unknown Location";
     if (latVal && lngVal) {
-      const mapsUrl  = `https://maps.google.com/?q=${parseFloat(latVal).toFixed(6)},${parseFloat(lngVal).toFixed(6)}`;
-      locationLine = `\n📍 <b>Location:</b> <a href="${mapsUrl}">View on Google Maps</a>\n<code>${parseFloat(latVal).toFixed(5)}, ${parseFloat(lngVal).toFixed(5)}</code>`;
+      locationLine = `https://maps.google.com/?q=${parseFloat(latVal).toFixed(5)},${parseFloat(lngVal).toFixed(5)}`;
     }
 
     const message =
-      `🚨 <b>EMERGENCY SOS ALERT!</b>\n\n` +
-      `👤 <b>${userName}</b> needs <b>IMMEDIATE HELP</b>!\n` +
-      `⏰ <b>Time:</b> ${new Date().toLocaleString("en-IN")}` +
-      locationLine +
-      `\n\n💬 <i>Reply to this message — our AI assistant will guide you on what to do next.</i>`;
+      `🚨 EMERGENCY SOS ALERT 🚨\n\n` +
+      `${userName} has triggered an emergency SOS and may need immediate assistance.\n\n` +
+      `⏰ Time: ${new Date().toLocaleString("en-IN")}\n\n` +
+      `📍 Last Known Location:\n${locationLine}\n\n` +
+      `⚠ Immediate Action Required:\n` +
+      `Please contact ${userName} immediately or reach the location.\n\n` +
+      `If the situation is critical, please contact emergency services (112).\n\n` +
+      `Reply to this message — our AI assistant will guide you on the next steps.`;
 
     const tgResult = await sendTelegramMessage(chatId, message);
 
@@ -615,7 +785,14 @@ app.post("/telegram/webhook", express.json(), async (req, res) => {
     const fromName = msg.from?.first_name || msg.from?.username || "Contact";
     const text     = (msg.text || "").trim();
 
-    if (!chatId || !text) return;
+    if (!chatId) return;
+
+    if (!text) {
+      if (msg.voice || msg.audio || msg.video || msg.video_note || msg.document || msg.photo) {
+        await sendTelegramMessage(chatId, `⚠️ **Sorry ${fromName}, I cannot process audio, video, or image messages at the moment.**\n\n💬 Please type your question or request in text format.`);
+      }
+      return;
+    }
 
     console.log("\x1b[35m%s\x1b[0m", `[Telegram Webhook] From: ${fromName} (chat_id: ${chatId}) | Message: ${text}`);
 
@@ -653,6 +830,8 @@ app.post("/telegram/webhook", express.json(), async (req, res) => {
     let locationStr = "unknown location";
     let locationUrl = "";
     let matchedUserId = null;
+    let userLat = null;
+    let userLng = null;
 
     if (matchedProfile) {
       matchedUserId = matchedProfile.userId;
@@ -666,8 +845,15 @@ app.post("/telegram/webhook", express.json(), async (req, res) => {
         .catch(() => null);
 
       if (latestSOS?.lat && latestSOS?.lng) {
+        userLat = latestSOS.lat;
+        userLng = latestSOS.lng;
         locationStr = `${latestSOS.lat.toFixed(5)}, ${latestSOS.lng.toFixed(5)}`;
         locationUrl = `https://maps.google.com/?q=${latestSOS.lat.toFixed(6)},${latestSOS.lng.toFixed(6)}`;
+      } else if (matchedProfile.lat && matchedProfile.lng) {
+        userLat = matchedProfile.lat;
+        userLng = matchedProfile.lng;
+        locationStr = `${matchedProfile.lat.toFixed(5)}, ${matchedProfile.lng.toFixed(5)}`;
+        locationUrl = `https://maps.google.com/?q=${matchedProfile.lat.toFixed(6)},${matchedProfile.lng.toFixed(6)}`;
       }
     }
 
@@ -720,39 +906,135 @@ app.post("/telegram/webhook", express.json(), async (req, res) => {
         const ecPhone = matchedProfile?.emergencyContactPhone || "";
         const docs    = matchedProfile?.documents   || [];
 
-        // ── Fast direct answers (no AI call) for simple factual queries ──
+        // ── Fast direct answers (no AI call) for specific action queries ──
         const q = text.toLowerCase();
         let directReply = "";
+        
+        // Helper to check if a specific document is requested by name
+        const nameWords = userName.toLowerCase().split(/\W+/);
+        const ignoreWords = ['send', 'show', 'document', 'doc', 'file', 'me', 'the', 'my', 'please', 'nearest'].concat(nameWords);
+        const wordsInQuery = q.split(/\W+/).filter(w => w.length > 2 && !ignoreWords.includes(w));
+        
+        const allUserDocs = matchedProfile?.documents || [];
+        const specificDocsMatched = allUserDocs.filter(d => {
+          const lWords = (d.label || "").toLowerCase().split(/\W+/);
+          const fWords = (d.filename || "").toLowerCase().split(/\W+/);
+          const docWords = lWords.concat(fWords);
+          return wordsInQuery.some(word => docWords.includes(word));
+        });
 
-        if (/emergency.?contact|ec.?number|ec.?phone|contact.?number|contact.?name/.test(q)) {
-          directReply = (ecName || ecPhone)
-            ? `${userName}'s emergency contact: ${ecName || "N/A"}, Phone: ${ecPhone || "N/A"}.`
-            : `${userName}'s emergency contact details are not set in their profile.`;
-        } else if (/live.?loc|current.?loc|real.?time|gps|abhi.?kaha|\blocation\b|\bloc\b|where/.test(q) && !/address/.test(q)) {
+        // Determine limits for facilities
+        let limitMatch = q.match(/\b(\d+)\b/);
+        let limit = limitMatch ? parseInt(limitMatch[1], 10) : 1;
+        
+        let shouldSkipFirst = /other|another|next|aur|doosra|dusra|or/.test(q);
+        let fetchLimit = limit + (shouldSkipFirst ? 1 : 0);
+        
+        if (limit > 5) limit = 5; // cap at 5
+        if (limit < 1) limit = 1;
+        if (fetchLimit > 6) fetchLimit = 6;
+
+        const asksForList = /count|kitne|kitna|how many|total|number|list|kaun/i.test(q);
+        const isDocumentAction = !asksForList && (
+          /(send|bhejo|dikhao|share|give|get|provide|show).*(document|doc|file|record|medical.?cert|certificate|report)/i.test(q) ||
+          /(document|doc|file|record|medical.?cert|certificate|report).*(send|bhejo|dikhao|share|give|get|provide|show)/i.test(q)
+        );
+
+        if (/live.?loc|current.?loc|real.?time|gps|abhi.?kaha|track/.test(q) && !/address/.test(q)) {
           directReply = locationUrl
             ? `${userName}'s location: ${locationUrl}`
             : `${userName}'s live GPS location is not being shared right now.`;
-        } else if (/phone|number|mobile/.test(q)) {
-          directReply = phone
-            ? `${userName}'s phone number is ${phone}.`
-            : `${userName}'s phone number is not set in their profile.`;
-        } else if (/address|ghar|rahta|rehta|kaha.?rehta/.test(q)) {
-          directReply = address
-            ? `${userName}'s address: ${address}.`
-            : `${userName}'s address is not set in their profile.`;
-        } else if (/blood|group|bloodgroup/.test(q)) {
-          directReply = bg
-            ? `${userName}'s blood group is ${bg}.`
-            : `${userName}'s blood group is not set in their profile.`;
-        } else if (/age|umar|kitne saal|how old/.test(q)) {
-          directReply = age
-            ? `${userName} is ${age} years old.`
-            : `${userName}'s age is not set in their profile.`;
-        } else if (/gender|male|female|kaun/.test(q)) {
-          directReply = gender
-            ? `${userName}'s gender is ${gender}.`
-            : `${userName}'s gender is not set in their profile.`;
-        } else if (/document|doc|file|record|medical.?cert|certificate|report|send.?doc|bhejo|dikhao|show.?doc/.test(q)) {
+        } else if (/hospital|clinic|emergency ward/i.test(q) && !isDocumentAction) {
+          if (userLat && userLng) {
+            let specificName = "";
+            let nameMatch = q.match(/(.*?)\b(hospital|clinic)\b/i);
+            if (nameMatch && nameMatch[1]) {
+                let potentialName = nameMatch[1].replace(/send|give|me|detail \s*about|details?|nearby|nearest|pas ka|pass|najdik/ig, "").trim();
+                if(potentialName.length > 2) {
+                    specificName = potentialName + " " + nameMatch[2];
+                    limit = 1; // if asking for a specific hospital, we just want the best match
+                    fetchLimit = 1;
+                }
+            }
+
+            let places = await getNearestFacilities(userLat, userLng, "hospital", fetchLimit, specificName);
+            if (places && places.length > 0) {
+              if (shouldSkipFirst && places.length > 1 && !specificName) {
+                places = places.slice(1, limit + 1);
+              } else {
+                places = places.slice(0, limit);
+              }
+              
+              if(specificName) {
+                directReply = `🏥 **Details for ${places[0].name} (Near ${userName}):**\n\n`;
+              } else {
+                directReply = `🏥 **Nearest Hospital(s) for ${userName}:**\n\n`;
+              }
+
+              places.forEach((place, idx) => {
+                const url = place.place_id 
+                  ? `https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lng}&query_place_id=${place.place_id}`
+                  : `https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lng}`;
+                directReply += `🏨 **${limit > 1 ? (idx + 1) + ". " : ""}${place.name}**\n📍 **Address:** ${place.address}\n📞 **Phone:** ${place.phone || "Not available"}\n📏 **Distance:** ~${place.distance} km\n🗺 **Location:** ${url}\n\n`;
+              });
+            } else {
+              directReply = `❌ No ${specificName || 'nearby hospitals'} found for **${userName}**'s current location.`;
+            }
+          } else {
+            directReply = `❌ Cannot find hospital details because **${userName}**'s location is not available.`;
+          }
+        } else if (/police|thana|chowki|station|cop/i.test(q) && !isDocumentAction) {
+          if (userLat && userLng) {
+            let specificName = "";
+            let nameMatch = q.match(/(.*?)\b(police|thana|chowki)\b/i);
+            if (nameMatch && nameMatch[1]) {
+                let potentialName = nameMatch[1].replace(/send|give|me|detail \s*about|details?|nearby|nearest|pas ka|pass|najdik/ig, "").trim();
+                if(potentialName.length > 2) {
+                    specificName = potentialName + " " + nameMatch[2];
+                    limit = 1;
+                    fetchLimit = 1;
+                }
+            }
+
+            let places = await getNearestFacilities(userLat, userLng, "police", fetchLimit, specificName);
+            if (places && places.length > 0) {
+              if (shouldSkipFirst && places.length > 1 && !specificName) {
+                places = places.slice(1, limit + 1);
+              } else {
+                places = places.slice(0, limit);
+              }
+              
+              if(specificName) {
+                directReply = `🚓 **Details for ${places[0].name} (Near ${userName}):**\n\n`;
+              } else {
+                directReply = `🚓 **Nearest Police Station(s) for ${userName}:**\n\n`;
+              }
+
+              places.forEach((place, idx) => {
+                const url = place.place_id 
+                  ? `https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lng}&query_place_id=${place.place_id}`
+                  : `https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lng}`;
+                directReply += `🚔 **${limit > 1 ? (idx + 1) + ". " : ""}${place.name}**\n📍 **Address:** ${place.address}\n📞 **Phone:** ${place.phone || "Not available"}\n📏 **Distance:** ~${place.distance} km\n🗺 **Location:** ${url}\n\n`;
+              });
+            } else {
+              directReply = `❌ No ${specificName || 'nearby police stations'} found for **${userName}**'s current location.`;
+            }
+          } else {
+            directReply = `❌ Cannot find police station details because **${userName}**'s location is not available.`;
+          }
+        } else if (asksForList && /document|doc|file|record|medical/i.test(q)) {
+          const allDocs = matchedProfile?.documents || [];
+          if (!allDocs.length) {
+            directReply = `📂 **${userName}** has no documents saved in their profile.`;
+          } else {
+            directReply = `📂 **Documents available for ${userName} (${allDocs.length}):**\n\n`;
+            allDocs.forEach((d, i) => {
+              const docName = d.label || d.filename || "Unknown Document";
+              directReply += `📄 ${i + 1}. **${docName}**\n`;
+            });
+            directReply += `\n💬 *Reply with "send [document name]" to get the file.*`;
+          }
+        } else if (isDocumentAction || (!asksForList && specificDocsMatched.length > 0)) {
           // ── User wants actual documents sent — fetch base64 data from DB ──
           const fullProfile = await UserProfile.findOne(
             { userId: matchedUserId },
@@ -763,30 +1045,44 @@ app.post("/telegram/webhook", express.json(), async (req, res) => {
           if (!allDocs.length) {
             directReply = `No documents are saved in ${userName}'s profile.`;
           } else {
-            const withData = allDocs.filter(d => d.data);
+            let withData = allDocs.filter(d => d.data);
+            
+            // Filter if the user asked for a specific document
+            if (specificDocsMatched.length > 0 && !/all|saare/i.test(q)) {
+              const requestedDocs = withData.filter(d => {
+                const lWords = (d.label || "").toLowerCase().split(/\W+/);
+                const fWords = (d.filename || "").toLowerCase().split(/\W+/);
+                return lWords.concat(fWords).some(word => word.length > 2 && wordsInQuery.includes(word));
+              });
+
+              if (requestedDocs.length > 0) {
+                withData = requestedDocs;
+              }
+            }
+
             if (!withData.length) {
               directReply = `${userName} has ${allDocs.length} document label(s) but no file data stored.`;
             } else {
               // Set text reply first, then send files below
               directReply = `📎 Sending ${withData.length} document(s) from ${userName}'s profile...`;
-              // Store docs so we send them after the text reply
               docsToSend = withData;
             }
           }
-        } // end else-if document
+        }
 
         if (directReply) {
           aiReply = directReply;
           console.log("\x1b[32m%s\x1b[0m", `[AI Agent] Direct answer: ${aiReply}`);
         } else {
-          // ── LongCat AI for open-ended / complex questions ──────────────
+          // ── LongCat AI handles all other queries (count, age, phone, custom questions) ──
           const aiText = await longcatChat([
             {
               role: "system",
               content:
                 `You are SEAP Emergency AI. An emergency contact is asking about someone who triggered an SOS alert. ` +
                 `Answer ONLY what was asked. Use ONLY the profile data below. ` +
-                `Be direct and concise (max 3 sentences). No greetings, no filler. ` +
+                `Respond strictly in a clean, highly structured, well-designed Markdown format using bullet points, emojis where appropriate, and bold text for labels (e.g. 👤 **Name:**, 📞 **Phone:**). ` +
+                `Do not use plain paragraph text. No greetings, no filler. If asking for details/profile, give a well formatted list. ` +
                 `If the data is not available in the profile, clearly say it is not set.\n\n` +
                 `Victim profile:\n${profileContext}`,
             },
@@ -803,7 +1099,12 @@ app.post("/telegram/webhook", express.json(), async (req, res) => {
     // ── Send AI reply back to the emergency contact via Telegram ──────────
     // escapeHtml: prevents Telegram from rejecting the message if the AI
     // generated text containing & < > characters (Bad Request: can't parse entities)
-    const tgReplyResult = await sendTelegramMessage(chatId, escapeHtml(aiReply));
+    let finalTgMessage = escapeHtml(aiReply);
+    // Convert markdown to HTML bold/italic since we are parsing HTML
+    finalTgMessage = finalTgMessage.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+    finalTgMessage = finalTgMessage.replace(/\*(.*?)\*/g, '<i>$1</i>');
+
+    const tgReplyResult = await sendTelegramMessage(chatId, finalTgMessage);
     if (tgReplyResult?.ok) {
       console.log("\x1b[32m%s\x1b[0m", `[Telegram] Auto-reply sent to ${fromName} (chat_id: ${chatId})`);
     } else {
@@ -1326,39 +1627,16 @@ app.post("/sms/incoming", express.urlencoded({ extended: false }), async (req, r
       const q = msgBody.toLowerCase();
       let directReply = "";
 
-      if (/phone|number|mobile/.test(q) && !/emergency.?contact/.test(q)) {
-        directReply = phone
-          ? `${userName}'s phone number is ${phone}.`
-          : `${userName}'s phone number is not set in their profile.`;
-      } else if (/emergency.?contact|ec.?number|ec.?phone/.test(q)) {
-        const ecN = matchedProfile?.emergencyContactName  || "";
-        const ecP = matchedProfile?.emergencyContactPhone || "";
-        directReply = (ecN || ecP)
-          ? `${userName}'s emergency contact: ${ecN || "N/A"}, Phone: ${ecP || "N/A"}.`
-          : `${userName}'s emergency contact is not set.`;
-      } else if (/kaha|kha|where|location|loc/.test(q) && !/address/.test(q)) {
+      const isDocumentAction = /(send|bhejo|dikhao|share|give|get|provide|show).*(document|doc|file|record|medical.?cert|certificate|report)/i.test(q) 
+                            || /(document|doc|file|record|medical.?cert|certificate|report).*(send|bhejo|dikhao|share|give|get|provide|show)/i.test(q);
+
+      if (/kaha|kha|where|location|loc|track/.test(q) && !/address/.test(q)) {
         directReply = locationUrl
           ? `${userName}'s last known location: ${locationUrl}`
           : address
             ? `${userName}'s address: ${address}. Live location not available.`
             : `${userName}'s live location is not available right now.`;
-      } else if (/address|ghar|rahta|rehta/.test(q)) {
-        directReply = address
-          ? `${userName}'s address: ${address}.`
-          : `${userName}'s address is not set in their profile.`;
-      } else if (/blood|group|bloodgroup/.test(q)) {
-        directReply = bg
-          ? `${userName}'s blood group is ${bg}.`
-          : `${userName}'s blood group is not set in their profile.`;
-      } else if (/age|umar|kitne saal|how old/.test(q)) {
-        directReply = age
-          ? `${userName} is ${age} years old.`
-          : `${userName}'s age is not set in their profile.`;
-      } else if (/gender|male|female/.test(q)) {
-        directReply = gender
-          ? `${userName}'s gender is ${gender}.`
-          : `${userName}'s gender is not set in their profile.`;
-      } else if (/document|doc|file|record|medical.?cert|certificate|report/.test(q)) {
+      } else if (isDocumentAction || (!/count|kitne|kitna|how many|total|number|list|kaun/i.test(q) && /document|doc|file|record|medical.?cert|certificate|report/.test(q))) {
         if (docs.length) {
           const docList = docs.map(d => d.label || d.filename).filter(Boolean).join(", ");
           directReply = docList
