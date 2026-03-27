@@ -251,9 +251,254 @@ body { background: var(--bg-deep); font-family: var(--font-ui); padding-top: 64p
   align-items: start;
 }
 @media (max-width: 780px) {
-  .profile-grid { grid-template-columns: 1fr; }
-  .profile-hero-body { padding: 22px 20px; gap: 20px; }
-  .hero-actions { flex-direction: row; flex-wrap: wrap; }
+  .profile-main {
+    padding: 22px 14px 60px;
+  }
+  .profile-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .profile-hero {
+    border-radius: 16px;
+  }
+  .profile-hero-body {
+    padding: 20px 14px;
+    gap: 14px;
+    align-items: flex-start;
+  }
+  .hero-info {
+    min-width: 0;
+    width: 100%;
+  }
+  .hero-name {
+    font-size: 1.2rem;
+    line-height: 1.25;
+    word-break: break-word;
+  }
+  .hero-email {
+    word-break: break-all;
+  }
+  .hero-actions {
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .hero-change-photo-btn,
+  .hero-remove-photo-btn {
+    flex: 1 1 180px;
+    text-align: center;
+  }
+  .form-row-3 {
+    grid-template-columns: 1fr 1fr;
+  }
+  .acct-stats-grid {
+    grid-template-columns: 1fr;
+  }
+  .upload-actions {
+    flex-direction: column;
+  }
+  .upload-actions .cancel-upload-btn,
+  .upload-actions .confirm-upload-btn {
+    width: 100%;
+  }
+  .identity-actions {
+    flex-wrap: wrap;
+    justify-content: stretch;
+  }
+  .identity-actions .save-btn,
+  .cancel-edit-btn {
+    flex: 1 1 160px;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 680px) {
+  body {
+    padding-top: 58px;
+  }
+  .topbar {
+    height: 58px;
+    padding: 0 10px;
+  }
+  .topbar-left {
+    gap: 8px;
+    min-width: 0;
+  }
+  .topbar-right {
+    gap: 8px;
+  }
+  .topbar-breadcrumb,
+  .topbar-clock,
+  .user-name {
+    display: none;
+  }
+  .topbar-logo-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+  }
+  .topbar-title {
+    font-size: 0.68rem;
+    letter-spacing: 1.5px;
+  }
+  .topbar-subtitle {
+    display: none;
+  }
+  .user-menu {
+    padding: 4px 8px;
+  }
+  .user-dropdown {
+    min-width: 170px;
+    max-width: calc(100vw - 16px);
+    right: 0;
+  }
+
+  .profile-page-header {
+    flex-direction: column;
+    align-items: stretch;
+    margin-bottom: 16px;
+  }
+  .profile-page-title {
+    gap: 10px;
+  }
+  .page-title-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    font-size: 1.15rem;
+  }
+  .page-title-text {
+    font-size: 1rem;
+    letter-spacing: 2px;
+  }
+  .page-title-sub {
+    font-size: 0.72rem;
+    line-height: 1.4;
+  }
+  .back-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .hero-avatar-ring {
+    width: 84px;
+    height: 84px;
+  }
+  .hero-avatar-initials {
+    font-size: 1.5rem;
+  }
+
+  .profile-card {
+    border-radius: 14px;
+    margin-bottom: 14px;
+  }
+  .card-header {
+    padding: 12px 12px;
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .card-header-title {
+    font-size: 0.58rem;
+    letter-spacing: 1.5px;
+    min-width: 0;
+  }
+  .card-edit-btn {
+    margin-left: 0;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .form-section {
+    padding: 14px 12px 2px;
+  }
+  .form-row-3 {
+    grid-template-columns: 1fr;
+  }
+  .input-icon {
+    min-width: 44px;
+    padding: 0 10px;
+    font-size: 1rem;
+  }
+  .profile-input {
+    font-size: 0.82rem;
+    padding: 10px 10px;
+  }
+
+  .identity-actions {
+    padding: 4px 12px 14px;
+    gap: 8px;
+  }
+  .identity-actions .save-btn,
+  .cancel-edit-btn {
+    width: 100%;
+    flex: 1 1 100%;
+  }
+
+  .upload-zone {
+    margin: 12px 12px 0;
+  }
+  .upload-zone-inner {
+    padding: 20px 12px;
+  }
+  .upload-title {
+    font-size: 0.82rem;
+    text-align: center;
+  }
+  .upload-sub {
+    font-size: 0.64rem;
+  }
+  .doc-upload-form,
+  .docs-list {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .doc-item {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 8px;
+    align-items: start;
+  }
+  .doc-thumb-wrap,
+  .doc-type-icon {
+    width: 42px;
+    height: 42px;
+    font-size: 1.2rem;
+  }
+  .doc-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .ec-hint {
+    margin: -4px 0 10px;
+    font-size: 0.62rem;
+  }
+}
+
+@media (max-width: 420px) {
+  .profile-main {
+    padding: 18px 10px 50px;
+  }
+  .hero-change-photo-btn,
+  .hero-remove-photo-btn {
+    flex: 1 1 100%;
+  }
+  .doc-viewer-header {
+    padding: 10px;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .doc-viewer-title {
+    max-width: 100%;
+    font-size: 0.75rem;
+  }
+  .doc-viewer-header-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
 }
 
 /* â”€â”€â”€ Generic Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -1005,4 +1250,177 @@ body.light-mode .doc-count-badge { background: rgba(37,99,235,0.1); border-color
 .ec-card.card-editing .ec-top-line,
 .ec-card.card-editing .profile-card-top-line {
   opacity: 1;
+}
+
+/* =============================================================
+   FINAL MOBILE OVERRIDES (kept at file end intentionally)
+   ============================================================= */
+@media (max-width: 900px) {
+  .profile-main {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 20px 12px 56px !important;
+  }
+
+  .profile-grid {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+
+  .profile-card,
+  .profile-hero {
+    width: 100% !important;
+    min-width: 0 !important;
+    overflow: visible;
+  }
+
+  .profile-hero-body {
+    gap: 14px !important;
+    padding: 16px 12px 18px !important;
+  }
+
+  .hero-info,
+  .hero-actions {
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+
+  .hero-name,
+  .hero-email,
+  .page-title-text,
+  .page-title-sub,
+  .card-header-title,
+  .doc-label,
+  .selected-file-name {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .form-section {
+    padding: 14px 12px 2px !important;
+  }
+
+  .form-row-3 {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  .input-wrapper {
+    min-width: 0 !important;
+  }
+
+  .profile-input,
+  .profile-textarea {
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+
+  .identity-actions,
+  .upload-actions {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+  }
+
+  .identity-actions .save-btn,
+  .cancel-edit-btn,
+  .cancel-upload-btn,
+  .confirm-upload-btn {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .acct-stats-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .doc-item {
+    display: grid !important;
+    grid-template-columns: 40px minmax(0, 1fr) !important;
+    align-items: start !important;
+  }
+
+  .doc-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .upload-zone,
+  .doc-upload-form,
+  .docs-list {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+}
+
+@media (max-width: 680px) {
+  body {
+    padding-top: 58px !important;
+  }
+
+  .topbar {
+    height: 58px !important;
+    padding: 0 10px !important;
+  }
+
+  .topbar-breadcrumb,
+  .topbar-clock,
+  .user-name,
+  .topbar-subtitle {
+    display: none !important;
+  }
+
+  .topbar-logo-icon {
+    width: 30px !important;
+    height: 30px !important;
+  }
+
+  .profile-page-header {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  .back-btn,
+  .card-edit-btn,
+  .hero-change-photo-btn,
+  .hero-remove-photo-btn {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+
+  .hero-avatar-ring {
+    width: 84px !important;
+    height: 84px !important;
+  }
+
+  .card-header {
+    padding: 12px !important;
+    gap: 8px !important;
+    flex-wrap: wrap !important;
+  }
+}
+
+@media (max-width: 420px) {
+  .profile-main {
+    padding: 16px 10px 46px !important;
+  }
+
+  .page-title-text {
+    font-size: 0.95rem !important;
+    letter-spacing: 1.5px !important;
+  }
+
+  .doc-viewer-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .doc-viewer-title {
+    max-width: 100%;
+    font-size: 0.75rem;
+  }
 }

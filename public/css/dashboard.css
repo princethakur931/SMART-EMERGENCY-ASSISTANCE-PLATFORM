@@ -1167,34 +1167,164 @@
 @media (max-width: 1200px) {
   .dashboard-content {
     grid-template-columns: 280px 1fr;
+    grid-template-rows: minmax(420px, 58vh) auto;
+    height: auto;
+    min-height: calc(100vh - 64px);
+    overflow: visible;
   }
   .sidebar-right {
-    display: none;
+    display: flex;
+    grid-column: 1 / -1;
+    height: auto;
+    max-height: none;
+    border-top: 1px solid var(--border-primary);
+  }
+  .map-section {
+    border-right: none;
+    min-height: 420px;
   }
 }
 
 @media (max-width: 900px) {
   .dashboard-content {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    min-height: calc(100vh - 64px);
+    overflow: visible;
+  }
+  .map-section {
+    order: 1;
+    min-height: 60vh;
+    border-right: none;
+    border-bottom: 1px solid var(--border-primary);
+  }
+  .sidebar-right {
+    order: 2;
+    display: flex;
+    height: auto;
+    max-height: none;
+    border-top: none;
+    border-bottom: 1px solid var(--border-primary);
   }
   .sidebar-left {
-    display: none;
+    order: 3;
+    display: flex;
+    height: auto;
+    max-height: none;
+    border-right: none;
   }
   .topbar-breadcrumb,
   .system-status {
     display: none;
   }
+  .topbar {
+    padding: 0 12px;
+  }
+  .topbar-right {
+    gap: 8px;
+  }
+  .user-name,
+  .topbar-clock {
+    display: none;
+  }
+  .map-toolbar {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  .map-toolbar-left {
+    width: 100%;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .map-filter-btns {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .filter-btn {
+    flex: 1 1 120px;
+    min-height: 34px;
+    font-size: 0.58rem;
+    letter-spacing: 1.2px;
+  }
+  .map-stats-bar {
+    gap: 10px;
+    padding: 10px 12px;
+  }
+  .map-stat {
+    font-size: 0.6rem;
+  }
+  .quick-contacts {
+    grid-template-columns: 1fr;
+  }
+  .sidebar-tabs {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    backdrop-filter: blur(12px);
+  }
+  .live-badge {
+    top: 8px;
+    right: 8px;
+    padding: 6px 10px;
+    font-size: 0.55rem;
+    letter-spacing: 1.2px;
+  }
 }
 
 @media (max-width: 600px) {
   .topbar {
-    padding: 0 12px;
+    height: 58px;
+    padding: 0 10px;
+  }
+  .dashboard-content {
+    margin-top: 58px;
+    min-height: calc(100vh - 58px);
   }
   .topbar-title {
     font-size: 0.7rem;
   }
+  .topbar-subtitle {
+    display: none;
+  }
+  .topbar-logo-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+  }
   .map-toolbar {
-    padding: 8px 12px;
+    padding: 8px 10px;
+  }
+  .map-title {
+    font-size: 0.62rem;
+    letter-spacing: 1.2px;
+  }
+  .filter-btn {
+    flex: 1 1 calc(50% - 6px);
+    padding: 6px 10px;
+  }
+  .sidebar-left,
+  .sidebar-right {
+    padding: 14px;
+  }
+  .iot-card,
+  .sos-section,
+  .facility-card {
+    border-radius: 12px;
+  }
+  .facility-actions-row {
+    flex-wrap: wrap;
+  }
+  .facility-action-btn {
+    flex: 1 1 calc(50% - 4px);
+  }
+  .alert-banner {
+    top: 58px;
+    padding: 10px 12px;
+    font-size: 0.62rem;
+    letter-spacing: 1.2px;
+    gap: 8px;
   }
 }
 
