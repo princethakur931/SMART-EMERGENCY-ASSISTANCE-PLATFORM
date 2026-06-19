@@ -210,6 +210,39 @@ function escapeHtml(str) {
 }
 
 /**
+ * Reverse Geocode: lat/lng → human-readable address (Google Maps Geocoding API)
+ * Returns a short readable string like "Connaught Place, New Delhi, Delhi"
+ * Falls back to null if API fails or key is missing.
+ */
+async function reverseGeocode(lat, lng) {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey || !lat || !lng) return null;
+  try {
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${apiKey}`;
+    const data = await new Promise((resolve) => {
+      https.get(url, { headers: { 'User-Agent': 'SEAP-Emergency-Bot/1.0' } }, (res) => {
+        let body = "";
+        res.on("data", chunk => body += chunk);
+        res.on("end", () => { try { resolve(JSON.parse(body)); } catch (e) { resolve(null); } });
+      }).on("error", () => resolve(null));
+    });
+    if (data && data.status === "OK" && data.results && data.results[0]) {
+      const comps = data.results[0].address_components || [];
+      const neighborhood = comps.find(c => c.types.includes("neighborhood") || c.types.includes("sublocality_level_1"));
+      const city = comps.find(c => c.types.includes("locality"));
+      const state = comps.find(c => c.types.includes("administrative_area_level_1"));
+      if (neighborhood && city) {
+        return `${neighborhood.long_name}, ${city.long_name}${state ? ", " + state.long_name : ""}`;
+      }
+      return data.results[0].formatted_address;
+    }
+  } catch (e) {
+    console.warn("[Geocode] Reverse geocode failed:", e.message);
+  }
+  return null;
+}
+
+/**
  * Calculate distance between two coordinates using the Real Road Distance API (OSRM)
  * Fallback to Haversine straight-line if API fails
  */
@@ -389,7 +422,7 @@ function aiAgentChat(promptOrMessages, timeoutMs = 15000) {
       ? promptOrMessages
       : [{ role: "user", content: promptOrMessages }];
     const body = JSON.stringify({
-      model: "moonshotai/kimi-k2",
+      model: "openai/gpt-4o-mini",
       messages,
       max_tokens: 200,
       temperature: 0.3,
@@ -530,12 +563,11 @@ app.use((req, res, next) => {
 });
 
 // ─── IoT Device Simulation ────────────────────────────────────────────────────
-// Simulates a GPS IoT device sending real-time coordinates
-// Starting point: New Delhi, India (can be changed to any starting lat/lng)
+// Starts with no coordinates — real GPS is pushed by browser via /api/iot/update
 let iotDevice = {
   deviceId: "IOT-EMERGENCY-001",
-  lat: 28.6139,
-  lng: 77.209,
+  lat: null,  // No hardcoded default — will be set when real GPS arrives
+  lng: null,
   speed: 0,
   battery: 87,
   signal: "Strong",
@@ -546,7 +578,7 @@ let iotDevice = {
 // Flag: true once a real GPS push is received from browser
 let realGPSReceived = false;
 
-// Simulate IoT device movement ONLY when no real GPS is available
+// Simulate IoT device movement ONLY when no real GPS is available AND lat/lng is set
 setInterval(() => {
   if (realGPSReceived) {
     // Real GPS is being used — only update battery/signal, NO position drift
@@ -556,13 +588,11 @@ setInterval(() => {
     iotDevice.speed = 0;
     return;
   }
-  // Simulation mode — drift position
-  iotDevice.lat += (Math.random() - 0.5) * 0.001;
-  iotDevice.lng += (Math.random() - 0.5) * 0.001;
-  iotDevice.speed = Math.floor(Math.random() * 30);
+  // No real GPS yet — don't simulate fake Delhi drift; just update battery/time
   iotDevice.battery = Math.max(10, iotDevice.battery - 0.01);
   iotDevice.lastUpdate = new Date().toISOString();
   iotDevice.signal = Math.random() > 0.1 ? "Strong" : "Weak";
+  iotDevice.speed = 0;
 }, 3000);
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
@@ -1312,6 +1342,7 @@ app.post("/api/call/sos", async (req, res) => {
     const voiceUrl =
       `${publicBase.replace(/\/$/, "")}/call/voice` +
       `?ngrok-skip-browser-warning=1` +
+      `&uid=${encodeURIComponent(userId)}` +
       `&name=${encodeURIComponent(userName)}` +
       `&ec=${encodeURIComponent(profile.emergencyContactName || "Contact")}` +
       (latVal && lngVal ? `&lat=${parseFloat(latVal).toFixed(5)}&lng=${parseFloat(lngVal).toFixed(5)}` : "");
@@ -1355,25 +1386,26 @@ app.get("/call/voice", async (req, res) => {
   const lat  = req.query.lat  || null;
   const lng  = req.query.lng  || null;
 
-  let locationText = "Currently unknown, but their tracking details have been sent to you via S.M.S.";
+  let locationText = "currently unknown. Their tracking details have been sent to you via S.M.S.";
   if (lat && lng) {
-    // Try to get the actual address using Google Maps Reverse Geocoding
+    const latVal = Math.abs(parseFloat(lat)).toFixed(4);
+    const lngVal = Math.abs(parseFloat(lng)).toFixed(4);
+    const latDir = parseFloat(lat) >= 0 ? 'n' : 's';
+    const lngDir = parseFloat(lng) >= 0 ? 'e' : 'w';
+    
+    // Use the reverseGeocode helper (https-based, reliable across all Node.js versions)
     try {
-      const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-      const getAddressUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${apiKey}`;
-      const response = await fetch(getAddressUrl);
-      const data = await response.json();
+      const placeName = await reverseGeocode(parseFloat(lat), parseFloat(lng));
       
-      if (data.status === 'OK' && data.results && data.results[0]) {
-        // Extract a readable short address or full formatted address
-        const address = data.results[0].formatted_address;
-        locationText = `${address}. Their live Google Maps tracking link has also been sent to you via S.M.S.`;
+      if (placeName) {
+        locationText = `${placeName} ${latVal} ${latDir} latitude and ${lngVal} ${lngDir} longitude. A live Google Maps tracking link has also been sent to you via S.M.S.`;
+        console.log(`[AutoCall] Geocoded location: ${placeName}`);
       } else {
-        locationText = `at Latitude ${lat} and Longitude ${lng}. A live Google Maps tracking link has been sent to you via S.M.S.`;
+        locationText = `${latVal} ${latDir} latitude and ${lngVal} ${lngDir} longitude. A live Google Maps tracking link has been sent to you via S.M.S.`;
       }
     } catch (e) {
-      console.error("Geocoding failed for voice alert:", e);
-      locationText = `recorded on our system. A live Google Maps tracking link has been sent to you via S.M.S.`;
+      console.error("[AutoCall] Geocoding failed for voice alert:", e.message);
+      locationText = `${latVal} ${latDir} latitude and ${lngVal} ${lngDir} longitude.`;
     }
   }
 
@@ -1382,28 +1414,28 @@ app.get("/call/voice", async (req, res) => {
     (process.env.NGROK_DOMAIN || "").trim() ||
     `http://localhost:${process.env.PORT || 3000}`;
 
+  const uid = req.query.uid || "";
+
   const gatherAction =
     `${publicBase.replace(/\/$/, "")}/call/respond` +
-    `?ngrok-skip-browser-warning=1&name=${encodeURIComponent(name)}&lat=${lat || ""}&lng=${lng || ""}` ;
+    `?ngrok-skip-browser-warning=1&uid=${encodeURIComponent(uid)}&name=${encodeURIComponent(name)}&lat=${lat || ""}&lng=${lng || ""}` ;
 
   // Main alert message — matches user-specified format exactly
   const message =
-    `Hello ${ec}. ` +
-    `This is an automated emergency alert from the Smart Emergency Assistance Platform. ` +
-    `${name} has triggered an S.O.S. alert and may need immediate help. ` +
-    `Their last known location is: ${locationText}\n` +
-    `Please try to contact them immediately, or call India's emergency helpline number 1 1 2 if urgent assistance is required. ` +
-    `You may now ask any question, and our AI assistant will try to provide the available information. ` +
-    `For example, you can ask about their blood group, phone number, or address.`;
+    `Hello ${ec}, please listen carefully. ` +
+    `I'm calling on behalf of ${name}, who has just triggered an emergency S.O.S. alert and needs your help immediately. ` +
+    `Right now, they are at ${locationText} ` +
+    `Please try calling them right away, or dial 1 1 2 for emergency services. ` +
+    `I'm right here on the line with you. If you need any details about ${name}, like their blood group, phone number, or address, just ask me.`;
 
   res.set("Content-Type", "text/xml");
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="Polly.Joanna" language="en-IN">${message.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</Say>
-  <Gather input="speech" action="${gatherAction.replace(/&/g,"&amp;")}" method="POST" timeout="25" speechTimeout="auto" language="en-IN" finishOnKey="">
-    <Say voice="Polly.Joanna" language="en-IN">Please ask your question now.</Say>
+  <Say voice="Polly.Aditi" language="en-IN">${message.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</Say>
+  <Gather input="speech" action="${gatherAction.replace(/&/g,"&amp;")}" method="POST" timeout="5" speechTimeout="1" language="en-IN">
+    <Say voice="Polly.Aditi" language="en-IN">Please ask your question now.</Say>
   </Gather>
-  <Say voice="Polly.Joanna" language="en-IN">No input received. Please stay safe and contact emergency services. Goodbye.</Say>
+  <Say voice="Polly.Aditi" language="en-IN">I didn't hear anything, but please make sure to check on them. Take care and goodbye.</Say>
 </Response>`);
 });
 
@@ -1413,17 +1445,23 @@ app.post("/call/respond", express.urlencoded({ extended: false }), async (req, r
   const name     = req.query.name || "the person in distress";
   const lat      = req.query.lat  || null;
   const lng      = req.query.lng  || null;
+  const uid      = req.query.uid  || null;
 
-  let answer = `I'm sorry, I didn't catch that. Please call emergency services on 1 1 2 for immediate help.`;
+  let answer = `I'm sorry, I didn't quite catch that. Please make sure to call 1 1 2 if you need immediate help.`;
 
   if (question) {
     try {
-      // Look up profile by username (best effort)
-      const allProfiles = await UserProfile.find({}).lean();
+      // ── Fast profile lookup: directly by userId (passed in URL) ──────────
       let matchedProfile = null;
+      if (uid) {
+        matchedProfile = await UserProfile.findOne(
+          { userId: uid },
+          { photo: 0, "documents.data": 0 }
+        ).lean().catch(() => null);
+      }
 
-      // Try to find the profile matching this call's user
-      if (lat && lng) {
+      // Fallback: lat/lng SOS scan (only if uid not available)
+      if (!matchedProfile && lat && lng) {
         const latF = parseFloat(lat);
         const lngF = parseFloat(lng);
         const latestSOS = await SOS.findOne({
@@ -1431,7 +1469,10 @@ app.post("/call/respond", express.urlencoded({ extended: false }), async (req, r
           lng: { $gte: lngF - 0.001, $lte: lngF + 0.001 },
         }).sort({ timestamp: -1 }).lean().catch(() => null);
         if (latestSOS?.userId) {
-          matchedProfile = allProfiles.find(p => String(p.userId) === String(latestSOS.userId)) || null;
+          matchedProfile = await UserProfile.findOne(
+            { userId: latestSOS.userId },
+            { photo: 0, "documents.data": 0 }
+          ).lean().catch(() => null);
         }
       }
 
@@ -1444,29 +1485,47 @@ app.post("/call/respond", express.urlencoded({ extended: false }), async (req, r
 
       const q = question.toLowerCase();
 
-      // Direct answers — no AI needed
+      // Direct answers — no AI needed (instant)
       if (/blood|group/.test(q)) {
-        answer = bg ? `${name}'s blood group is ${bg}.` : `${name}'s blood group is not set in their profile.`;
+        answer = bg ? `Yes, ${name}'s blood group is ${bg}.` : `I'm sorry, but ${name} hasn't added their blood group to their profile.`;
       } else if (/phone|number|mobile|call/.test(q)) {
-        answer = phone ? `${name}'s phone number is ${phone}.` : `${name}'s phone number is not available.`;
+        answer = phone ? `Sure, ${name}'s phone number is ${phone}.` : `I don't have their phone number right now.`;
       } else if (/address|where|location|kahan|ghar/.test(q)) {
-        answer = address ? `${name}'s address is ${address}.` : (lat && lng ? `${name}'s GPS coordinates are ${locationStr}.` : `Location not available.`);
+        if (address) {
+          // Profile mein address saved hai — use it directly
+          answer = `${name}'s registered address is ${address}.`;
+        } else if (lat && lng) {
+          // Try reverse geocoding first for a readable place name
+          const placeName = await reverseGeocode(parseFloat(lat), parseFloat(lng));
+          if (placeName) {
+            answer = `They are currently at ${placeName}. The exact coordinates are ${locationStr}.`;
+          } else {
+            answer = `Their GPS coordinates are ${locationStr}.`;
+          }
+        } else {
+          answer = `I'm sorry, but I don't have their location right now.`;
+        }
       } else if (/age|old/.test(q)) {
-        answer = age ? `${name} is ${age} years old.` : `${name}'s age is not available.`;
+        answer = age ? `${name} is ${age} years old.` : `I don't have ${name}'s age on file.`;
       } else if (/gender|male|female/.test(q)) {
-        answer = gender ? `${name}'s gender is ${gender}.` : `${name}'s gender is not available.`;
+        answer = gender ? `${name}'s gender is ${gender}.` : `I don't have their gender on file.`;
       } else if (aiAgentKey) {
         const profileSummary = `Name: ${name} | Age: ${age||"?"} | Gender: ${gender||"?"} | Blood: ${bg||"?"} | Phone: ${phone||"not set"} | Address: ${address||"?"} | Location: ${locationStr}`;
         const prompt =
-          `You are an emergency voice AI assistant responding on a phone call. Answer ONLY what was asked. Be very concise (max 2 sentences, no markdown, no symbols).\n` +
+          `You are an emergency voice AI. Answer in 1 short sentence only. No markdown, no symbols.\n` +
           `Victim info: ${profileSummary}\n` +
           `Question: "${question}"\n` +
           `Answer:`;
         try {
-          const aiText = await aiAgentChat(prompt, 8000);
-          if (aiText) answer = aiText.replace(/[*#_`]/g, "").substring(0, 300);
+          const aiText = await aiAgentChat([
+            { role: "system", content: `You are a calm, empathetic, and human-like emergency coordinator. Speak directly to the caller. Keep answers very brief, conversational, and natural. No markdown, no symbols. IMPORTANT: Always reply in the exact same language the user used (e.g. if they ask in Hindi/Hinglish, reply in conversational Hindi/Hinglish). Victim info: ${profileSummary}` },
+            { role: "user", content: question }
+          ], 5000);
+          if (aiText) answer = aiText.replace(/[*#_`]/g, "").substring(0, 250);
         } catch (e) {
           console.warn("[Call AI] Error:", e.message);
+          // Fallback answer if AI times out
+          answer = `I'm sorry, I'm unable to retrieve that information right now. Please contact emergency services on 1 1 2.`;
         }
       }
     } catch (err) {
@@ -1483,16 +1542,16 @@ app.post("/call/respond", express.urlencoded({ extended: false }), async (req, r
 
   const loopAction =
     `${publicBase.replace(/\/$/, "")}/call/respond` +
-    `?ngrok-skip-browser-warning=1&name=${encodeURIComponent(name)}&lat=${lat || ""}&lng=${lng || ""}`;
+    `?ngrok-skip-browser-warning=1&uid=${encodeURIComponent(uid || "")}&name=${encodeURIComponent(name)}&lat=${lat || ""}&lng=${lng || ""}` ;
 
   res.set("Content-Type", "text/xml");
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="Polly.Joanna" language="en-IN">${answer.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</Say>
-  <Gather input="speech" action="${loopAction.replace(/&/g,"&amp;")}" method="POST" timeout="10" speechTimeout="auto" language="en-IN" finishOnKey="">
-    <Say voice="Polly.Joanna" language="en-IN">You can ask another question, or stay on the line.</Say>
+  <Say voice="Polly.Aditi" language="en-IN">${answer.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</Say>
+  <Gather input="speech" action="${loopAction.replace(/&/g,"&amp;")}" method="POST" timeout="5" speechTimeout="1" language="en-IN">
+    <Say voice="Polly.Aditi" language="en-IN">Do you have any other questions? I'm still here.</Say>
   </Gather>
-  <Say voice="Polly.Joanna" language="en-IN">Stay safe. Help is on the way. Goodbye.</Say>
+  <Say voice="Polly.Aditi" language="en-IN">Stay safe. Help is on the way. Goodbye.</Say>
 </Response>`);
 });
 

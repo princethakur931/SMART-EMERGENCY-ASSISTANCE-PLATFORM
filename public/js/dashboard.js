@@ -1,4 +1,4 @@
-﻿/* ═══════════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════
    DASHBOARD - MAIN LOGIC (Google Maps Edition)
    IoT Location Polling | Live Map | Nearby Services | SOS
    ═══════════════════════════════════════════════════════════════ */
@@ -1661,7 +1661,9 @@ document.getElementById("btnFullscreen").addEventListener("click", () => {
 });
 
 // ─── Send Telegram Alert to Emergency Contact ────────────────
-async function sendEmergencyContactTelegram() {
+async function sendEmergencyContactTelegram(sosLat, sosLng) {
+  const lat = sosLat ?? state.lat;
+  const lng = sosLng ?? state.lng;
   try {
     // Check Telegram toggle — if disabled, skip silently
     const tgToggleEl = document.getElementById("telegramAlertToggle");
@@ -1686,8 +1688,8 @@ async function sendEmergencyContactTelegram() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         userId: CURRENT_USER?.id,
-        lat: state.lat,
-        lng: state.lng,
+        lat,
+        lng,
       }),
     });
     const tgData = await tgRes.json();
@@ -1725,7 +1727,9 @@ async function triggerTelegramSOS() {
 window.triggerTelegramSOS = triggerTelegramSOS;
 
 // ─── Auto Call to Emergency Contact on SOS ────────────────────
-async function sendEmergencyContactCall() {
+async function sendEmergencyContactCall(sosLat, sosLng) {
+  const lat = sosLat ?? state.lat;
+  const lng = sosLng ?? state.lng;
   try {
     // Check Auto Call toggle — if disabled, skip silently
     const callToggleEl = document.getElementById("autoCallToggle");
@@ -1739,8 +1743,8 @@ async function sendEmergencyContactCall() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         userId: CURRENT_USER?.id,
-        lat: state.lat,
-        lng: state.lng,
+        lat,
+        lng,
       }),
     });
     const data = await res.json();
@@ -1757,7 +1761,9 @@ async function sendEmergencyContactCall() {
 }
 
 // ─── Send SMS to Emergency Contact ───────────────────────────
-async function sendEmergencyContactSMS() {
+async function sendEmergencyContactSMS(sosLat, sosLng) {
+  const lat = sosLat ?? state.lat;
+  const lng = sosLng ?? state.lng;
   try {
     // Fetch emergency contact from profile
     const res     = await fetch(`/api/profile/${CURRENT_USER?.id}`);
@@ -1772,7 +1778,7 @@ async function sendEmergencyContactSMS() {
     }
 
     const userName     = CURRENT_USER?.name || "Someone";
-    const locationUrl  = `https://maps.google.com/?q=${state.lat.toFixed(5)},${state.lng.toFixed(5)}`;
+    const locationUrl  = `https://maps.google.com/?q=${lat.toFixed(5)},${lng.toFixed(5)}`;
     const smsBody      = `🚨 EMERGENCY SOS ALERT 🚨\n\n${userName} has triggered an emergency SOS and may need immediate assistance.\n\n⏰ Time: ${new Date().toLocaleString("en-IN")}\n\n📍 Last Known Location:\n${locationUrl}\n\n⚠ Immediate Action Required:\nPlease contact ${userName} immediately or reach the location.\n\nIf the situation is critical, please contact emergency services (112).\n\nReply to this message — our AI assistant will guide you on the next steps.`;
 
     // Check Twilio SMS toggle — if disabled, skip SMS entirely
@@ -1878,9 +1884,37 @@ async function triggerSOS() {
 
   playSosAlarm();
   showToast("🚨 SOS ALERT SENT! Emergency services notified!", "error", 8000);
-  sendBrowserNotif("🚨 SOS ALERT SENT", `Emergency triggered by ${CURRENT_USER?.name || "Unknown"} at ${state.lat.toFixed(5)}, ${state.lng.toFixed(5)}`);
   DOM.sosBanner.classList.add("danger");
   DOM.sosBanner.style.display = "flex";
+
+  // ─── Get REAL GPS from browser first ──────────────────────────
+  let sosLat = state.lat;
+  let sosLng = state.lng;
+
+  try {
+    const pos = await new Promise((resolve, reject) =>
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 5000,
+        maximumAge: 0,
+      })
+    );
+    sosLat = pos.coords.latitude;
+    sosLng = pos.coords.longitude;
+    // Update state and push real GPS to server IoT tracker
+    state.lat = sosLat;
+    state.lng = sosLng;
+    fetch("/api/iot/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat: sosLat, lng: sosLng, deviceId: "BROWSER-GPS" }),
+    }).catch(() => {});
+    console.log(`[SOS] Real GPS obtained: ${sosLat}, ${sosLng}`);
+  } catch (gpsErr) {
+    console.warn("[SOS] GPS unavailable, using last known state:", gpsErr.message);
+  }
+
+  sendBrowserNotif("🚨 SOS ALERT SENT", `Emergency triggered by ${CURRENT_USER?.name || "Unknown"} at ${sosLat.toFixed(5)}, ${sosLng.toFixed(5)}`);
 
   // ─── Log SOS to backend ────────────────────────────────────
   try {
@@ -1889,9 +1923,9 @@ async function triggerSOS() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         userId: CURRENT_USER?.id,
-        lat: state.lat,
-        lng: state.lng,
-        message: `EMERGENCY from ${CURRENT_USER?.name || "Unknown"} at ${state.lat.toFixed(6)}, ${state.lng.toFixed(6)}`,
+        lat: sosLat,
+        lng: sosLng,
+        message: `EMERGENCY from ${CURRENT_USER?.name || "Unknown"} at ${sosLat.toFixed(6)}, ${sosLng.toFixed(6)}`,
       }),
     });
   } catch (err) {
@@ -1899,19 +1933,19 @@ async function triggerSOS() {
   }
 
   // ─── Send SMS to Emergency Contact ─────────────────────────
-  sendEmergencyContactSMS();
+  sendEmergencyContactSMS(sosLat, sosLng);
 
   // ─── Send Telegram Alert to Emergency Contact ───────────────
-  sendEmergencyContactTelegram();
+  sendEmergencyContactTelegram(sosLat, sosLng);
 
   // ─── Auto Call Emergency Contact ────────────────────────────
-  sendEmergencyContactCall();
+  sendEmergencyContactCall(sosLat, sosLng);
 
   const logEntry = {
     id: Date.now(),
     time: new Date().toLocaleTimeString(),
-    lat: state.lat.toFixed(5),
-    lng: state.lng.toFixed(5),
+    lat: sosLat.toFixed(5),
+    lng: sosLng.toFixed(5),
     user: CURRENT_USER?.name || "Unknown",
   };
   state.sosLog.unshift(logEntry);
@@ -1925,7 +1959,7 @@ async function triggerSOS() {
   if (map) {
     sosCircle = new google.maps.Circle({
       map,
-      center: { lat: state.lat, lng: state.lng },
+      center: { lat: sosLat, lng: sosLng },
       radius: 200,
       strokeColor: "#ff2244",
       strokeOpacity: 0.8,
