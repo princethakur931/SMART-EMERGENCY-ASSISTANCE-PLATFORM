@@ -7,13 +7,13 @@ const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 const https = require("https");
 
-// ─── AI Agent (LongCat AI) ───────────────────────────────────────────────────
-// Uses LongCat's OpenAI-compatible API — no extra npm package needed
-// Endpoint: https://api.longcat.chat/openai/v1/chat/completions
+// ─── AI Agent (OpenRouter) ───────────────────────────────────────────────────
+// Uses OpenRouter's OpenAI-compatible API
+// Endpoint: https://openrouter.ai/api/v1/chat/completions
 const aiAgentKey = process.env.AI_AGENT_KEY;
 
 if (aiAgentKey) {
-  console.log("\x1b[32m%s\x1b[0m", "[AI Agent] LongCat AI agent initialized ✓");
+  console.log("\x1b[32m%s\x1b[0m", "[AI Agent] OpenRouter AI agent initialized ✓");
 } else {
   console.warn("[AI Agent] AI_AGENT_KEY not set — auto-reply disabled");
 }
@@ -378,18 +378,18 @@ async function getNearestFacilities(lat, lng, type, limit = 1, specificName = ""
 }
 
 /**
- * Send a prompt to LongCat AI and get a text reply.
+ * Send a prompt to OpenRouter AI and get a text reply.
  * @param {string} prompt
  * @returns {Promise<string>}
  */
-function longcatChat(promptOrMessages, timeoutMs = 6000) {
+function aiAgentChat(promptOrMessages, timeoutMs = 15000) {
   return new Promise((resolve, reject) => {
     // Accept a plain string OR a messages array (system + user format)
     const messages = Array.isArray(promptOrMessages)
       ? promptOrMessages
       : [{ role: "user", content: promptOrMessages }];
     const body = JSON.stringify({
-      model: "LongCat-Flash-Chat",
+      model: "moonshotai/kimi-k2",
       messages,
       max_tokens: 200,
       temperature: 0.3,
@@ -397,13 +397,15 @@ function longcatChat(promptOrMessages, timeoutMs = 6000) {
     });
 
     const options = {
-      hostname: "api.longcat.chat",
-      path: "/openai/v1/chat/completions",
+      hostname: "openrouter.ai",
+      path: "/api/v1/chat/completions",
       method: "POST",
       headers: {
         "Authorization": `Bearer ${aiAgentKey}`,
         "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(body),
+        "HTTP-Referer": "http://localhost:3000",
+        "X-Title": "SEAP Emergency Bot"
       },
     };
 
@@ -438,6 +440,10 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ─── MongoDB Connection ───────────────────────────────────────────────────────
+// Fix for Node.js SRV DNS resolution issues on some local networks (ECONNREFUSED querySrv)
+const dns = require("dns");
+dns.setServers(["8.8.8.8", "8.8.4.4"]);
+
 mongoose
   .connect(process.env.MONGODB_URI || "mongodb://localhost:27017/emergency_platform")
   .then(() => console.log("\x1b[32m%s\x1b[0m", "[MongoDB] Connected successfully ✓"))
@@ -694,7 +700,7 @@ app.post("/api/place-phones/save", async (req, res) => {
     const doc = await PlacePhone.findOneAndUpdate(
       { placeId },
       { phone, placeName: placeName || "", addedBy: userId || "", updatedAt: new Date() },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: "after" }
     );
     res.json({ success: true, phone: doc.phone });
   } catch (err) {
@@ -1074,8 +1080,8 @@ app.post("/telegram/webhook", express.json(), async (req, res) => {
           aiReply = directReply;
           console.log("\x1b[32m%s\x1b[0m", `[AI Agent] Direct answer: ${aiReply}`);
         } else {
-          // ── LongCat AI handles all other queries (count, age, phone, custom questions) ──
-          const aiText = await longcatChat([
+          // ── OpenRouter handles all other queries (count, age, phone, custom questions) ──
+          const aiText = await aiAgentChat([
             {
               role: "system",
               content:
@@ -1155,7 +1161,7 @@ app.post("/api/profile/:userId", async (req, res) => {
     const profile = await UserProfile.findOneAndUpdate(
       { userId: req.params.userId },
       { $set: update, $setOnInsert: { memberSince: new Date() } },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: "after" }
     );
     // If name change requested, update User collection too
     if (name) {
@@ -1196,7 +1202,7 @@ app.post("/api/settings/twilio", async (req, res) => {
     await AppSettings.findOneAndUpdate(
       { key: "twilioEnabled" },
       { value: twilioServiceEnabled },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: "after" }
     );
     const state = twilioServiceEnabled ? "ENABLED" : "DISABLED";
     console.log(`\x1b[33m%s\x1b[0m`, `[Twilio] Service ${state} — saved to DB`);
@@ -1249,7 +1255,7 @@ app.post("/api/settings/call", async (req, res) => {
     await AppSettings.findOneAndUpdate(
       { key: "callEnabled" },
       { value: callServiceEnabled },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: "after" }
     );
     const st = callServiceEnabled ? "ENABLED" : "DISABLED";
     console.log(`\x1b[33m%s\x1b[0m`, `[AutoCall] Service ${st} — saved to DB`);
@@ -1457,7 +1463,7 @@ app.post("/call/respond", express.urlencoded({ extended: false }), async (req, r
           `Question: "${question}"\n` +
           `Answer:`;
         try {
-          const aiText = await longcatChat(prompt, 8000);
+          const aiText = await aiAgentChat(prompt, 8000);
           if (aiText) answer = aiText.replace(/[*#_`]/g, "").substring(0, 300);
         } catch (e) {
           console.warn("[Call AI] Error:", e.message);
@@ -1501,7 +1507,7 @@ app.post("/api/settings/telegram", async (req, res) => {
     await AppSettings.findOneAndUpdate(
       { key: "telegramEnabled" },
       { value: telegramServiceEnabled },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: "after" }
     );
     const st = telegramServiceEnabled ? "ENABLED" : "DISABLED";
     console.log(`\x1b[33m%s\x1b[0m`, `[Telegram] Service ${st} — saved to DB`);
@@ -1651,8 +1657,8 @@ app.post("/sms/incoming", express.urlencoded({ extended: false }), async (req, r
         aiReply = directReply;
         console.log("\x1b[32m%s\x1b[0m", `[AI Agent] Direct answer: ${aiReply}`);
       } else {
-        // ── LongCat AI for open-ended questions ──
-        const aiText = await longcatChat([
+        // ── OpenRouter for open-ended questions ──
+        const aiText = await aiAgentChat([
           {
             role: "system",
             content:
@@ -1735,7 +1741,7 @@ app.post("/api/profile/:userId/photo", async (req, res) => {
     await UserProfile.findOneAndUpdate(
       { userId: req.params.userId },
       { $set: { photo } },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: "after" }
     );
     res.json({ success: true });
   } catch (err) {
@@ -1764,7 +1770,7 @@ app.post("/api/profile/:userId/document", async (req, res) => {
     await UserProfile.findOneAndUpdate(
       { userId: req.params.userId },
       { $push: { documents: doc }, $setOnInsert: { memberSince: new Date() } },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: "after" }
     );
     res.json({ success: true, doc });
   } catch (err) {
