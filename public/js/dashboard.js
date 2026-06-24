@@ -379,7 +379,53 @@ window.initMap = function () {
   // Start IoT polling
   fetchIoTLocation();
   iotFetchInterval = setInterval(fetchIoTLocation, 3000);
+
+  // Start IoT SOS trigger polling (checks if physical button was pressed)
+  pollIoTSosTrigger();
+  setInterval(pollIoTSosTrigger, 2000);
 };
+
+// ─── IoT SOS Trigger Polling ──────────────────────────────────
+// Polls /api/iot/sos-status every 2 seconds to detect physical button press
+// When detected, auto-triggers the website's SOS (same as clicking the SOS button)
+let iotSosPollingActive = true;
+
+async function pollIoTSosTrigger() {
+  if (!iotSosPollingActive) return;
+  try {
+    const res = await fetch("/api/iot/sos-status");
+    const data = await res.json();
+
+    if (data.success && data.triggered) {
+      console.log(
+        "%c[IoT SOS] 🚨 Physical button press detected! Auto-triggering SOS...",
+        "color: #ff2244; font-weight: bold; font-size: 14px"
+      );
+
+      // Show special toast for IoT-triggered SOS
+      const btnLabel = data.buttonType === "sms" ? "SMS Button" : 
+                       data.buttonType === "call" ? "Call Button" : "Button";
+      showToast(
+        `🚨 IoT Device (${btnLabel}) triggered SOS! Emergency services notified!`,
+        "error",
+        10000
+      );
+
+      // If IoT device sent GPS, update state
+      if (data.lat && data.lng) {
+        state.lat = parseFloat(data.lat);
+        state.lng = parseFloat(data.lng);
+      }
+
+      // Auto-trigger the SOS (exactly same as manual SOS button click)
+      if (!state.sosActive) {
+        triggerSOS(true);
+      }
+    }
+  } catch (err) {
+    // Silently fail — don't spam console on network errors
+  }
+}
 
 // ─── Real Browser Geolocation ─────────────────────────────────
 let geoWatchId = null;
@@ -1877,7 +1923,7 @@ DOM.sosBtn.addEventListener("touchend", (e) => {
   triggerSOS();
 }, { passive: false });
 
-async function triggerSOS() {
+async function triggerSOS(isFromIoT = false) {
   state.sosActive = true;
   DOM.sosBtn.style.background = "linear-gradient(135deg, #880022, #ff2244)";
   DOM.sosBtn.style.transform = "scale(1)";
@@ -1925,21 +1971,42 @@ async function triggerSOS() {
         userId: CURRENT_USER?.id,
         lat: sosLat,
         lng: sosLng,
-        message: `EMERGENCY from ${CURRENT_USER?.name || "Unknown"} at ${sosLat.toFixed(6)}, ${sosLng.toFixed(6)}`,
+        message: isFromIoT
+          ? `[IoT DEVICE SOS] Emergency triggered by ${CURRENT_USER?.name || "Unknown"} at ${sosLat.toFixed(6)}, ${sosLng.toFixed(6)}`
+          : `EMERGENCY from ${CURRENT_USER?.name || "Unknown"} at ${sosLat.toFixed(6)}, ${sosLng.toFixed(6)}`,
       }),
     });
   } catch (err) {
     console.warn("SOS backend error:", err);
   }
 
-  // ─── Send SMS to Emergency Contact ─────────────────────────
-  sendEmergencyContactSMS(sosLat, sosLng);
+  if (!isFromIoT) {
+    // ─── Send SMS to Emergency Contact ─────────────────────────
+    sendEmergencyContactSMS(sosLat, sosLng);
 
-  // ─── Send Telegram Alert to Emergency Contact ───────────────
-  sendEmergencyContactTelegram(sosLat, sosLng);
+    // ─── Send Telegram Alert to Emergency Contact ───────────────
+    sendEmergencyContactTelegram(sosLat, sosLng);
 
-  // ─── Auto Call Emergency Contact ────────────────────────────
-  sendEmergencyContactCall(sosLat, sosLng);
+    // ─── Auto Call Emergency Contact ────────────────────────────
+    sendEmergencyContactCall(sosLat, sosLng);
+  } else {
+    console.log("[SOS] Triggered via IoT device — skipping duplicate client-side alert sends");
+
+    // Display success notifications for enabled services that the server triggered
+    const tgToggleEl = document.getElementById("telegramAlertToggle");
+    const twilioToggleEl = document.getElementById("twilioSmsToggle");
+    const callToggleEl = document.getElementById("autoCallToggle");
+
+    if (tgToggleEl && tgToggleEl.checked) {
+      showToast(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="18" height="18" style="vertical-align:middle;margin-right:4px;border-radius:50%"><defs><linearGradient id="tg-t" x1="120" y1="0" x2="120" y2="240" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#2AABEE"/><stop offset="1" stop-color="#229ED9"/></linearGradient></defs><circle cx="120" cy="120" r="120" fill="url(#tg-t)"/><path d="M176 68L152.6 172.4c-1.7 7.6-6.3 9.5-12.7 5.9l-35-25.8-16.9 16.3c-1.9 1.9-3.4 3.4-7 3.4l2.5-35.4 64.5-58.3c2.8-2.5-.6-3.9-4.3-1.4L77.4 128.6 43.8 118c-7.4-2.3-7.5-7.4 1.5-11l122.8-47.3c6.2-2.3 11.6 1.5 7.9 8.3z" fill="#fff"/></svg> Telegram SOS sent to emergency contact!`, "success", 7000);
+    }
+    if (twilioToggleEl && twilioToggleEl.checked) {
+      showToast(`📱 SMS alert sent to emergency contact!`, "success", 6000);
+    }
+    if (callToggleEl && callToggleEl.checked) {
+      showToast(`📞 Emergency contact call placed! AI will answer their questions.`, "success", 7000);
+    }
+  }
 
   const logEntry = {
     id: Date.now(),

@@ -624,6 +624,271 @@ app.post("/api/iot/update", (req, res) => {
   }
 });
 
+// ─── IoT SOS Trigger (Physical Button → Website Auto-SOS) ────────────────────
+// When the physical IoT device button is pressed, it POSTs here.
+// The frontend polls /api/iot/sos-status every 2 seconds to detect the trigger.
+let iotSosTrigger = {
+  triggered: false,
+  buttonType: null,  // "sms" or "call"
+  lat: null,
+  lng: null,
+  deviceId: null,
+  timestamp: null,
+};
+
+/**
+ * Triggers Telegram, SMS, and Voice Call alerts to emergency contacts server-side.
+ * Used when a physical IoT device button triggers an SOS.
+ */
+async function triggerServerSOSWorkflow(userId, lat, lng) {
+  try {
+    console.log(`[IoT Server SOS Workflow] 🚀 Triggering alerts for user: ${userId} | GPS: ${lat || "N/A"}, ${lng || "N/A"}`);
+
+    // 1. Fetch user profile
+    const profile = await UserProfile.findOne({ userId }).lean();
+    if (!profile) {
+      console.warn(`[IoT Server SOS Workflow] No profile found for userId: ${userId}`);
+      return;
+    }
+
+    // 2. Fetch user
+    const user = await User.findById(userId).lean().catch(() => null);
+    const userName = user?.name || "Someone";
+    const ecName = profile.emergencyContactName || "Emergency Contact";
+
+    // Build location URL
+    const latVal = lat || profile.lat || null;
+    const lngVal = lng || profile.lng || null;
+    let locationUrl = "Unknown Location";
+    if (latVal && lngVal) {
+      locationUrl = `https://maps.google.com/?q=${parseFloat(latVal).toFixed(5)},${parseFloat(lngVal).toFixed(5)}`;
+    }
+
+    // ─── 1. TELEGRAM ALERT ───
+    if (telegramServiceEnabled && profile.emergencyContactTelegramChatId) {
+      const chatId = profile.emergencyContactTelegramChatId.trim();
+      const message =
+        `🚨 <b>EMERGENCY SOS ALERT (IoT Device)</b> 🚨\n\n` +
+        `<b>${userName}</b> has triggered an emergency SOS from their physical IoT device.\n\n` +
+        `⏰ <b>Time:</b> ${new Date().toLocaleString("en-IN")}\n\n` +
+        `📍 <b>Location:</b>\n${locationUrl}\n\n` +
+        `⚠ <b>Immediate Action Required:</b>\n` +
+        `Please contact ${userName} immediately.\n\n` +
+        `Reply to this message — our AI assistant is active to guide you.`;
+
+      try {
+        const tgResult = await sendTelegramMessage(chatId, message);
+        if (tgResult && tgResult.ok) {
+          console.log(`[IoT Server SOS Workflow] Telegram alert sent to ${ecName}`);
+          await SOS.create({
+            userId,
+            lat: latVal ? parseFloat(latVal) : undefined,
+            lng: lngVal ? parseFloat(lngVal) : undefined,
+            message: `[TELEGRAM SOS (IoT)] Alert sent to ${ecName} (chat_id: ${chatId})`,
+            status: "telegram_sent",
+          });
+        } else {
+          console.error(`[IoT Server SOS Workflow] Telegram API error:`, JSON.stringify(tgResult));
+        }
+      } catch (tgErr) {
+        console.error(`[IoT Server SOS Workflow] Telegram send failed:`, tgErr.message);
+      }
+    } else {
+      console.log(`[IoT Server SOS Workflow] Telegram alert skipped (disabled or no Chat ID)`);
+    }
+
+    // ─── 2. TWILIO SMS ALERT ───
+    if (twilioServiceEnabled && profile.emergencyContactPhone) {
+      let ecPhone = profile.emergencyContactPhone.replace(/[\s\-().]/g, "");
+      if (!ecPhone.startsWith("+")) ecPhone = "+91" + ecPhone;
+
+      const accountSid = process.env.TWILIO_ACCOUNT_SID;
+      const authToken  = process.env.TWILIO_AUTH_TOKEN;
+      const fromNumber = process.env.TWILIO_FROM_NUMBER;
+
+      if (accountSid && authToken && fromNumber) {
+        const smsBody = 
+          `🚨 EMERGENCY SOS ALERT (IoT Device) 🚨\n\n` +
+          `${userName} has triggered an emergency SOS from their physical IoT device.\n\n` +
+          `⏰ Time: ${new Date().toLocaleString("en-IN")}\n\n` +
+          `📍 Location: ${locationUrl}\n\n` +
+          `Please contact them immediately. Reply to this SMS for AI guide.`;
+
+        try {
+          const twilioClient = require("twilio")(accountSid, authToken);
+          const msg = await twilioClient.messages.create({ body: smsBody, from: fromNumber, to: ecPhone });
+          console.log(`[IoT Server SOS Workflow] Twilio SMS sent to ${ecPhone} | SID: ${msg.sid}`);
+          await SOS.create({
+            userId,
+            lat: latVal ? parseFloat(latVal) : undefined,
+            lng: lngVal ? parseFloat(lngVal) : undefined,
+            message: `[SMS SOS (IoT)] SMS sent to ${ecName} (${ecPhone}) via Twilio`,
+            status: "sms_sent",
+          });
+        } catch (smsErr) {
+          console.error(`[IoT Server SOS Workflow] Twilio SMS failed:`, smsErr.message);
+        }
+      } else {
+        console.warn(`[IoT Server SOS Workflow] Twilio credentials missing — SMS skipped`);
+      }
+    } else {
+      console.log(`[IoT Server SOS Workflow] SMS alert skipped (disabled or no phone number)`);
+    }
+
+    // ─── 3. TWILIO VOICE CALL ALERT ───
+    if (callServiceEnabled && profile.emergencyContactPhone) {
+      let ecPhone = profile.emergencyContactPhone.replace(/[\s\-().]/g, "");
+      if (!ecPhone.startsWith("+")) ecPhone = "+91" + ecPhone;
+
+      const accountSid = process.env.TWILIO_ACCOUNT_SID;
+      const authToken  = process.env.TWILIO_AUTH_TOKEN;
+      const fromNumber = process.env.TWILIO_FROM_NUMBER;
+
+      if (accountSid && authToken && fromNumber) {
+        const publicBase =
+          (process.env.RENDER_EXTERNAL_URL || "").trim() ||
+          (process.env.NGROK_DOMAIN || "").trim() ||
+          `http://localhost:${process.env.PORT || 3000}`;
+
+        const voiceUrl =
+          `${publicBase.replace(/\/$/, "")}/call/voice` +
+          `?ngrok-skip-browser-warning=1` +
+          `&uid=${encodeURIComponent(userId)}` +
+          `&name=${encodeURIComponent(userName)}` +
+          `&ec=${encodeURIComponent(profile.emergencyContactName || "Contact")}` +
+          (latVal && lngVal ? `&lat=${parseFloat(latVal).toFixed(5)}&lng=${parseFloat(lngVal).toFixed(5)}` : "");
+
+        try {
+          const twilioClient = require("twilio")(accountSid, authToken);
+          const call = await twilioClient.calls.create({
+            to: ecPhone,
+            from: fromNumber,
+            url: voiceUrl,
+            method: "GET",
+          });
+          console.log(`[IoT Server SOS Workflow] Twilio Call placed to ${ecPhone} | SID: ${call.sid}`);
+          await SOS.create({
+            userId,
+            lat: latVal ? parseFloat(latVal) : undefined,
+            lng: lngVal ? parseFloat(lngVal) : undefined,
+            message: `[CALL SOS (IoT)] Call placed to ${ecName} | SID: ${call.sid}`,
+            status: "call_placed",
+          });
+        } catch (callErr) {
+          console.error(`[IoT Server SOS Workflow] Twilio Call failed:`, callErr.message);
+        }
+      } else {
+        console.warn(`[IoT Server SOS Workflow] Twilio credentials missing — Call skipped`);
+      }
+    } else {
+      console.log(`[IoT Server SOS Workflow] Call skipped (disabled or no phone number)`);
+    }
+
+  } catch (err) {
+    console.error(`[IoT Server SOS Workflow Error]`, err.message);
+  }
+}
+
+// POST — IoT device sends SOS trigger when button is pressed
+app.post("/api/iot/sos-trigger", async (req, res) => {
+  try {
+    const { buttonType, deviceId, lat, lng } = req.body;
+
+    console.log(
+      "\x1b[31m%s\x1b[0m",
+      `[IoT SOS] 🚨 Button pressed! Type: ${buttonType || "unknown"} | Device: ${deviceId || "unknown"} | GPS: ${lat || "N/A"}, ${lng || "N/A"}`
+    );
+
+    // Set trigger flag — frontend will pick this up via polling
+    iotSosTrigger = {
+      triggered: true,
+      buttonType: buttonType || "unknown",
+      lat: lat ? parseFloat(lat) : null,
+      lng: lng ? parseFloat(lng) : null,
+      deviceId: deviceId || "IOT-EMERGENCY-001",
+      timestamp: new Date().toISOString(),
+    };
+
+    // Also update IoT device location if GPS is available
+    if (lat && lng) {
+      iotDevice.lat = parseFloat(lat);
+      iotDevice.lng = parseFloat(lng);
+      iotDevice.lastUpdate = new Date().toISOString();
+      realGPSReceived = true;
+    }
+
+    // Log SOS to MongoDB
+    await SOS.create({
+      userId: `iot:${deviceId || "IOT-EMERGENCY-001"}`,
+      lat: lat ? parseFloat(lat) : undefined,
+      lng: lng ? parseFloat(lng) : undefined,
+      message: `[IoT DEVICE SOS] Button: ${buttonType || "unknown"} | Device: ${deviceId || "IOT-EMERGENCY-001"}`,
+      status: "iot_triggered",
+    });
+
+    // Lookup user profile to run server-side alert alerts workflow
+    let targetUserId = null;
+    try {
+      const profile = await UserProfile.findOne({
+        $or: [
+          { emergencyContactPhone: { $ne: "" } },
+          { emergencyContactTelegramChatId: { $ne: "" } }
+        ]
+      }).lean();
+
+      if (profile) {
+        targetUserId = profile.userId;
+      } else {
+        const firstProfile = await UserProfile.findOne().lean();
+        if (firstProfile) {
+          targetUserId = firstProfile.userId;
+        }
+      }
+
+      if (targetUserId) {
+        // Run server-side emergency alert workflow asynchronously
+        triggerServerSOSWorkflow(targetUserId, lat, lng);
+      } else {
+        console.warn("[IoT SOS] No user profile found in database — skipping server-side alerts");
+      }
+    } catch (profileErr) {
+      console.error("[IoT SOS] Error querying user profile for alerts:", profileErr.message);
+    }
+
+    res.json({
+      success: true,
+      message: "SOS trigger received — website will auto-trigger SOS",
+    });
+  } catch (err) {
+    console.error("[IoT SOS Error]", err.message);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+// GET — Frontend polls this to check if IoT device triggered SOS
+// One-time read: resets the flag after reading so SOS fires exactly once
+app.get("/api/iot/sos-status", (req, res) => {
+  if (iotSosTrigger.triggered) {
+    const triggerData = { ...iotSosTrigger };
+    // Reset trigger — one-time read
+    iotSosTrigger = {
+      triggered: false,
+      buttonType: null,
+      lat: null,
+      lng: null,
+      deviceId: null,
+      timestamp: null,
+    };
+    console.log(
+      "\x1b[33m%s\x1b[0m",
+      `[IoT SOS] Frontend picked up trigger — resetting flag`
+    );
+    res.json({ success: true, ...triggerData });
+  } else {
+    res.json({ success: true, triggered: false });
+  }
+});
+
 // ─── Auth Routes (MongoDB) ────────────────────────────────────────────────────
 app.post("/api/auth/signup", async (req, res) => {
   try {
